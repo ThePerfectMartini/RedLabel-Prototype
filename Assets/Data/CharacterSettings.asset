@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7931ab8264ffbc74dbe046ccd3ab1630, type: 3}
+  m_Name: CharacterSettings
+  m_EditorClassIdentifier: Assembly-CSharp::CharacterSettings
+  moveSpeed: 5
+  runSpeed: 9
+  groundFriction: 30
+  jumpPower: 15
+  weight: 1
+  attack1: {fileID: 11400000, guid: a7856e7275b523d4fb5b01096624686d, type: 2}
+  attack2: {fileID: 11400000, guid: c42215bd2dec00841931ca83ca76fecb, type: 2}
+  dashAttack: {fileID: 11400000, guid: 51ba67d14f0761d4d893462e67be9e8c, type: 2}
+  jumpAttack: {fileID: 11400000, guid: 9b43ab5849b3b054eb45d5447a77ee55, type: 2}

@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a48d6660320890c49ad8030109955280, type: 3}
+  m_Name: "\uAE30\uBCF8\uACF5\uACA9 2"
+  m_EditorClassIdentifier: Assembly-CSharp::SkillData
+  animatorStateName: Attack 2
+  useComboInputTiming: 1
+  nextCombo: {fileID: 11400000, guid: 6227fa7b99c5b9b47a6c8010be23fec4, type: 2}
+  cancelsBasicAttack: 0
+  attackType: 1
+  lungeDistance: 0.5
+  attackDistance: 2
+  attackBoxSize: {x: 3, y: 3, z: 1}
+  damage: 5
+  hitStunDuration: 0.8
+  groundKnockbackPower: 5
+  isLauncher: 0
+  groundLaunchPower: 0
+  airborneKnockbackPower: 3
+  airborneLaunchPower: 7
