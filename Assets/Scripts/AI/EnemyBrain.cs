@@ -13,6 +13,7 @@ using UnityEngine.Serialization;
 ///              따라다니며 순서를 기다린다. 같은 쪽 Hold 적끼리는 플레이어에 가까운 순으로 자리를 나눠 선다
 ///              (두 마리씩 위아래, 그 뒤로는 holdSpacing만큼 바깥 줄). 내가 선 쪽(플레이어 기준 좌/우)의 공격권이 비면,
 ///              그쪽에서 Hold 중인 적 가운데 가장 가까운 적이 가져간다.
+///              자리는 느슨하게 쫓는다 — 적마다 다른 불감대·반응 시간이 있고, 서 있는 동안 가끔 반 걸음 옮긴다.
 ///   Approach — 공격권 쪽(좌/우)의 '대기 위치'(같은 라인, 사거리보다 standoffMargin만큼 바깥)로 간다.
 ///              보통 속도로 가고 멀면 달린다. 교전 범위는 보지 않는다.
 ///              대기 위치에서 engageEnterRadius 안에 들어오면 Engage로.
@@ -42,7 +43,8 @@ using UnityEngine.Serialization;
 /// 맞는 중(경직·띄워짐·쓰러짐)엔 판단을 멈춘다. 단순 경직은 공격권을 지키고, 띄워지거나 쓰러지면 내놓는다.
 /// 풀리면 공격권이 있으면 Approach, 없으면 Hold부터 다시 한다. 감지 전에 맞아도 쫓아온다.
 ///
-/// 랜덤 요소는 없다. 같은 상황이면 같은 행동을 한다.
+/// 판단에는 랜덤 요소가 없다. 같은 상황이면 같은 행동을 한다. 예외는 Hold 대기 적의 버릇뿐이다 —
+/// 불감대·반응 시간은 Awake에서 적마다 한 번 정하고, 잔동작의 간격·방향은 매번 정한다.
 /// 판단 과정을 눈으로 보려면 같은 오브젝트에 EnemyBrainGizmo를 붙인다.
 ///
 /// [준비물] 이 오브젝트 또는 그 자식에 MovementCore + AttackCore + StateMachine, 계층 위쪽에 Character.
@@ -60,6 +62,22 @@ public class EnemyBrain : MonoBehaviour
         Rush,
         Attack,
         Recover,
+    }
+
+    /// <summary>Hold 안에서의 세부 움직임. 대기 적들이 플레이어에 맞춰 일제히 움직이지 않게 나눠둔다.</summary>
+    public enum HoldPhase
+    {
+        /// <summary>자리에 서 있다. 잔동작 간격을 센다.</summary>
+        Settled,
+
+        /// <summary>자리가 불감대 밖으로 벗어난 걸 알아챘다. 반응 시간이 지나면 움직인다.</summary>
+        Reacting,
+
+        /// <summary>자리로 걸어가는 중. 도착하면 Settled.</summary>
+        Moving,
+
+        /// <summary>자리 근처의 작은 지점으로 반 걸음 옮기는 중. 도착하면 Settled.</summary>
+        Fidget,
     }
 
     /// <summary>목표 지점에 이만큼 가까우면 도착한 것으로 보고 멈춘다(m). 달리기 한 프레임 이동량보다 커야 지나치지 않는다.</summary>
@@ -142,6 +160,33 @@ public class EnemyBrain : MonoBehaviour
     [Min(0f)]
     [SerializeField] private float holdSpacing = 1.5f;
 
+    [Header("Hold 움직임")]
+    [Tooltip("불감대 최솟값(m). 대기 자리가 지금 위치에서 불감대보다 멀어져야 따라 움직인다. " +
+             "적마다 최솟값~최댓값 사이에서 한 번 정해서, 플레이어가 움직여도 대기 적들이 일제히 따라오지 않는다.")]
+    [Min(0.01f)]
+    [SerializeField] private float holdLeashMin = 0.8f;
+
+    [Tooltip("불감대 최댓값(m).")]
+    [SerializeField] private float holdLeashMax = 2f;
+
+    [Tooltip("반응 시간 최솟값(초). 대기 자리가 불감대를 벗어난 걸 알아챈 뒤 이만큼 있다가 출발한다. 적마다 한 번 정한다.")]
+    [Min(0f)]
+    [SerializeField] private float reactionDelayMin = 0.15f;
+
+    [Tooltip("반응 시간 최댓값(초).")]
+    [SerializeField] private float reactionDelayMax = 0.5f;
+
+    [Tooltip("잔동작 간격 최솟값(초). 자리에 서 있으면 이 간격마다 반 걸음씩 옮긴다. 간격은 매번 새로 정한다.")]
+    [Min(0.1f)]
+    [SerializeField] private float fidgetIntervalMin = 2f;
+
+    [Tooltip("잔동작 간격 최댓값(초).")]
+    [SerializeField] private float fidgetIntervalMax = 5f;
+
+    [Tooltip("잔동작으로 자리에서 옮기는 최대 거리(m). 잔동작 때문에 추적이 시작되지 않도록 불감대 최솟값의 80%를 넘지 못한다.")]
+    [Min(0f)]
+    [SerializeField] private float fidgetDistance = 0.4f;
+
     MovementCore movement;
     AttackCore attack;
     StateMachine state;
@@ -172,6 +217,28 @@ public class EnemyBrain : MonoBehaviour
     /// <summary>Engage 중 플레이어의 공격을 보고 기다리는 중인지. 그 공격이 끝나는 순간 돌진한다.</summary>
     bool waitingForOpening;
 
+    // ── Hold 움직임
+
+    HoldPhase holdPhase = HoldPhase.Settled;
+
+    /// <summary>이 적의 불감대(m). Awake에서 한 번 정하고 바뀌지 않는다.</summary>
+    float holdLeash;
+
+    /// <summary>이 적의 반응 시간(초). Awake에서 한 번 정하고 바뀌지 않는다.</summary>
+    float reactionDelay;
+
+    /// <summary>Reacting에서 출발까지 남은 시간.</summary>
+    float reactionTimer;
+
+    /// <summary>Settled에서 다음 잔동작까지 남은 시간.</summary>
+    float fidgetTimer;
+
+    /// <summary>지금 서 있으려는 지점이 대기 자리에서 얼마나 비껴 있는지. 잔동작이 바꾸고, 자리로 이동할 때 0이 된다.</summary>
+    Vector3 fidgetOffset;
+
+    /// <summary>마지막으로 계산한 대기 자리. 불감대는 이 점을 기준으로 잰다.</summary>
+    Vector3 holdSlot;
+
     /// <summary>Rush·Recover에서 남은 시간. 두 상태가 겹칠 일이 없어 하나로 같이 쓴다.</summary>
     float stateTimer;
 
@@ -196,6 +263,21 @@ public class EnemyBrain : MonoBehaviour
 
     /// <summary>Engage 중 플레이어가 공격하는 걸 보고 빈틈을 기다리는 중인지.</summary>
     public bool IsWaitingForOpening => waitingForOpening;
+
+    /// <summary>Hold 안에서의 세부 움직임.</summary>
+    public HoldPhase CurrentHoldPhase => holdPhase;
+
+    /// <summary>이 적의 불감대(m).</summary>
+    public float HoldLeash => holdLeash;
+
+    /// <summary>이 적의 반응 시간(초).</summary>
+    public float ReactionDelay => reactionDelay;
+
+    /// <summary>Reacting에서 출발까지 남은 시간.</summary>
+    public float ReactionTimer => reactionTimer;
+
+    /// <summary>마지막으로 계산한 대기 자리. 불감대 원의 중심이다.</summary>
+    public Vector3 HoldSlot => holdSlot;
 
     /// <summary>Rush·Recover에서 남은 시간.</summary>
     public float StateTimer => stateTimer;
@@ -286,6 +368,11 @@ public class EnemyBrain : MonoBehaviour
             Debug.LogWarning($"{name}: target 아래에서 StateMachine을 찾지 못해 '플레이어가 누워 있으면 Engage 멈춤'을 건너뜁니다.", this);
 
         map = MapBounds.Instance;
+
+        // 대기 적의 성격. 한 번만 정해서, 각 적은 끝까지 같은 버릇으로 움직인다.
+        holdLeash = Random.Range(holdLeashMin, holdLeashMax);
+        reactionDelay = Random.Range(reactionDelayMin, reactionDelayMax);
+        fidgetTimer = Random.Range(fidgetIntervalMin, fidgetIntervalMax);
     }
 
     // Awake에서 스스로 꺼졌으면(준비물 누락) OnEnable이 불리지 않아 목록에 들어가지 않는다.
@@ -391,8 +478,14 @@ public class EnemyBrain : MonoBehaviour
     }
 
     /// <summary>
-    /// 공격권 없이 바깥 링에서 따라다니며 순서를 기다린다. 공격권을 얻으면 Approach로 넘어간다.
-    /// 바깥 대기 위치에서 멀면 보통 속도(멀면 달리기)로 가고, 가까우면 느리게 따라다닌다.
+    /// 공격권 없이 바깥 링에서 순서를 기다린다. 공격권을 얻으면 곧바로 Approach로 넘어간다.
+    ///
+    /// 대기 자리를 매 프레임 쫓으면 플레이어가 한 걸음만 움직여도 대기 적 전원이 같은 순간 출발·정지해서
+    /// 줄 맞춰 끌려다니는 것처럼 보인다. 그래서:
+    ///   불감대 — 자리가 이 적의 holdLeash보다 멀어져야 움직인다.
+    ///   반응   — 벗어난 걸 알아챈 뒤 이 적의 reactionDelay만큼 있다가 출발한다. 그 사이 돌아오면 취소.
+    ///   이동   — 일단 출발하면 자리까지 간다. 멀면 보통 속도(멀면 달리기), 가까우면 느리게.
+    ///   잔동작 — 서 있는 동안 가끔 자리 근처로 반 걸음 옮긴다.
     /// </summary>
     void Hold()
     {
@@ -402,11 +495,76 @@ public class EnemyBrain : MonoBehaviour
             return;
         }
 
-        Vector3 holdPos = HoldPosition();
-        bool near = FlatDistance(body.position, holdPos) <= engageEnterRadius;
-        MoveTo(holdPos,
-               near ? stalkSpeedRatio : 1f,
-               near ? float.PositiveInfinity : runDistance);
+        holdSlot = HoldPosition();
+        float offSlot = FlatDistance(body.position, holdSlot);
+
+        switch (holdPhase)
+        {
+            case HoldPhase.Settled:
+            case HoldPhase.Fidget:
+                if (offSlot > holdLeash)
+                {
+                    holdPhase = HoldPhase.Reacting;
+                    reactionTimer = reactionDelay;
+                }
+                else if (holdPhase == HoldPhase.Settled)
+                {
+                    fidgetTimer -= Time.deltaTime;
+                    if (fidgetTimer <= 0f)
+                        StartFidget();
+                }
+                break;
+
+            case HoldPhase.Reacting:
+                if (offSlot <= holdLeash)
+                {
+                    holdPhase = HoldPhase.Settled;   // 플레이어가 잠깐 움직였다 돌아왔다. 출발 취소.
+                    break;
+                }
+
+                reactionTimer -= Time.deltaTime;
+                if (reactionTimer <= 0f)
+                {
+                    holdPhase = HoldPhase.Moving;
+                    fidgetOffset = Vector3.zero;   // 새 자리로 갈 땐 잔동작으로 비낀 걸 버린다
+                }
+                break;
+        }
+
+        switch (holdPhase)
+        {
+            case HoldPhase.Moving:
+                bool near = offSlot <= engageEnterRadius;
+                if (MoveTo(holdSlot, near ? stalkSpeedRatio : 1f, near ? float.PositiveInfinity : runDistance))
+                    holdPhase = HoldPhase.Settled;
+                break;
+
+            case HoldPhase.Fidget:
+                if (MoveTo(holdSlot + fidgetOffset, stalkSpeedRatio, float.PositiveInfinity))
+                    holdPhase = HoldPhase.Settled;
+                break;
+
+            default:
+                // Settled·Reacting: 제자리에 서서 플레이어를 바라본다. 목표 지점은 표시용으로만 갱신한다.
+                goal = holdSlot + fidgetOffset;
+                movement.SetMoveInput(Vector2.zero);
+                movement.FaceTowards(target.transform.position.x);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 자리 근처의 새 지점을 골라 반 걸음 옮기기 시작한다. 다음 잔동작까지의 간격도 새로 정한다.
+    /// 옮기는 거리는 불감대 최솟값의 80%로 묶는다 — 잔동작이 불감대를 넘으면 그 자체로 추적이 시작된다.
+    /// </summary>
+    void StartFidget()
+    {
+        float maxDistance = Mathf.Min(fidgetDistance, holdLeashMin * 0.8f);
+        Vector2 r = Random.insideUnitCircle * maxDistance;
+        fidgetOffset = new Vector3(r.x, 0f, r.y);
+
+        holdPhase = HoldPhase.Fidget;
+        fidgetTimer = Random.Range(fidgetIntervalMin, fidgetIntervalMax);
     }
 
     /// <summary>

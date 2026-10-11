@@ -33,7 +33,7 @@ public class EnemyBrainGizmo : MonoBehaviour
     [SerializeField] private bool showRanges = true;
 
     [Tooltip("지금 향하는 목표 지점(바깥 대기 위치·대기 위치·공격 위치)과 거기까지의 선(초록). Hold·Approach·Engage·Rush 중에만. " +
-             "Approach 중에는 대기 위치 주변의 Engage 진입 범위 원도 함께 그린다.")]
+             "Approach 중에는 대기 위치 주변의 Engage 진입 범위 원을, Hold 중에는 대기 자리 주변의 불감대 원(회색)을 함께 그린다.")]
     [SerializeField] private bool showGoal = true;
 
     [Tooltip("목표 지점 좌우로 runDistance만큼 떨어진 세로선(하늘색). 이 선 바깥이면 달린다. Hold·Approach·Engage·Rush 중에만.")]
@@ -96,6 +96,10 @@ public class EnemyBrainGizmo : MonoBehaviour
             // Approach 중에만 의미가 있다. 이 원 안에 들어오면 Engage로 넘어간다.
             if (brain.State == EnemyBrain.AIState.Approach && !brain.IsStunned)
                 DrawCircle(goal, brain.EngageEnterRadius, GoalColor);
+
+            // Hold 중에는 대기 자리를 중심으로 이 적의 불감대를 그린다. 자리가 이 원 밖으로 벗어나야 따라 움직인다.
+            if (brain.State == EnemyBrain.AIState.Hold && !brain.IsStunned)
+                DrawCircle(brain.HoldSlot, brain.HoldLeash, Color.gray);
         }
 
         if (showRunLines)
@@ -199,6 +203,17 @@ public class EnemyBrainGizmo : MonoBehaviour
                 // 플레이어가 휘두르는 중이라 시간을 멈추고 빈틈을 기다리는 중.
                 if (brain.IsWaitingForOpening)
                     text += " (대기)";
+                break;
+            case EnemyBrain.AIState.Hold:
+                // 세부 움직임과, 이 적의 버릇(불감대·반응 시간).
+                switch (brain.CurrentHoldPhase)
+                {
+                    case EnemyBrain.HoldPhase.Reacting: text = $"Hold 반응 {brain.ReactionTimer:0.00}s"; break;
+                    case EnemyBrain.HoldPhase.Moving:   text = "Hold 이동"; break;
+                    case EnemyBrain.HoldPhase.Fidget:   text = "Hold 잔동작"; break;
+                    default:                            text = "Hold"; break;
+                }
+                text += $" (불감 {brain.HoldLeash:0.0}m · 반응 {brain.ReactionDelay:0.00}s)";
                 break;
             case EnemyBrain.AIState.Rush:
                 text = $"Rush {brain.StateTimer:0.00}s";
