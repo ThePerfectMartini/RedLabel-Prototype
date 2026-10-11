@@ -13,7 +13,9 @@ using UnityEngine.Serialization;
 ///              대기 위치에서 engageEnterRadius 안에 들어오면 Engage로.
 ///   Engage   — stalkSpeedRatio로 천천히 대기 위치를 따라다니며, 플레이어가 교전 범위(적 중심의 원) 안에
 ///              머문 시간을 센다. engageDuration을 채우면 Rush로. 범위 밖으로 나가면 Approach로 돌아간다.
+///              플레이어가 공격 중이면 시간을 멈추고 기다렸다가, 그 공격이 끝나는 순간 곧바로 Rush로(빈틈 공략).
 ///   Rush     — 공격 위치(사거리 안쪽)로 달려간다. 사거리에 들어오는 순간 바로 친다.
+///              돌진 중에 플레이어가 공격을 시작해도 멈추지 않는다 — 받아치기는 플레이어의 몫이다.
 ///              rushTimeout 안에 못 닿으면 포기하고 Approach로.
 ///   Attack   — 공격 동작이 끝날 때까지 입력을 넣지 않는다(Lunge 속도가 지워지지 않게).
 ///   Recover  — 제자리에서 숨을 고른다. 플레이어가 반격할 틈이다. recoverDuration이 지나면 Approach로.
@@ -96,6 +98,9 @@ public class EnemyBrain : MonoBehaviour
     AttackCore attack;
     StateMachine state;
 
+    /// <summary>플레이어의 AttackCore. 휘두르는 중인지 보고 빈틈을 노리는 데 쓴다. 없으면 null이고 빈틈 공략을 건너뛴다.</summary>
+    AttackCore targetAttack;
+
     /// <summary>실제로 움직이는 몸. Character의 transform이다.</summary>
     Transform body;
 
@@ -109,6 +114,9 @@ public class EnemyBrain : MonoBehaviour
 
     /// <summary>Engage 중 플레이어가 교전 범위 안에 머문 시간.</summary>
     float engageTimer;
+
+    /// <summary>Engage 중 플레이어의 공격을 보고 기다리는 중인지. 그 공격이 끝나는 순간 돌진한다.</summary>
+    bool waitingForOpening;
 
     /// <summary>Rush·Recover에서 남은 시간. 두 상태가 겹칠 일이 없어 하나로 같이 쓴다.</summary>
     float stateTimer;
@@ -128,6 +136,9 @@ public class EnemyBrain : MonoBehaviour
     public float EngageTimer => engageTimer;
 
     public float EngageDuration => engageDuration;
+
+    /// <summary>Engage 중 플레이어가 공격하는 걸 보고 빈틈을 기다리는 중인지.</summary>
+    public bool IsWaitingForOpening => waitingForOpening;
 
     /// <summary>Rush·Recover에서 남은 시간.</summary>
     public float StateTimer => stateTimer;
@@ -201,6 +212,11 @@ public class EnemyBrain : MonoBehaviour
             return;
         }
 
+        // 플레이어의 Core도 LogicCores 같은 자식에 있을 수 있어 Character 기준으로 아래를 찾는다.
+        targetAttack = target.GetComponentInChildren<AttackCore>();
+        if (targetAttack == null)
+            Debug.LogWarning($"{name}: target 아래에서 AttackCore를 찾지 못해 빈틈 공략(플레이어 공격 중 대기)을 건너뜁니다.", this);
+
         map = MapBounds.Instance;
     }
 
@@ -231,6 +247,7 @@ public class EnemyBrain : MonoBehaviour
                 {
                     aiState = AIState.Engage;
                     engageTimer = 0f;
+                    waitingForOpening = false;
                 }
                 break;
 
@@ -264,6 +281,10 @@ public class EnemyBrain : MonoBehaviour
     /// <summary>
     /// 천천히 대기 위치를 따라다니며 플레이어가 교전 범위 안에 머문 시간을 센다.
     /// engageDuration을 채우면 돌진하고, 범위 밖으로 나가면 Approach로 돌아가 다시 자리를 잡는다.
+    ///
+    /// 플레이어가 휘두르는 중이면 시간을 멈추고 기다린다. 대기 위치는 사거리 바깥이라 그대로 따라다니면 된다.
+    /// 그 공격이 끝나는 순간 남은 시간과 상관없이 곧바로 돌진한다 — 헛손질한 뒤의 빈틈을 노리는 것이다.
+    /// 콤보 도중엔 IsAttacking이 계속 켜져 있으므로 콤보가 통째로 끝날 때까지 기다린다.
     /// </summary>
     void Engage()
     {
@@ -273,17 +294,38 @@ public class EnemyBrain : MonoBehaviour
             return;
         }
 
-        engageTimer += Time.deltaTime;
-        if (engageTimer >= engageDuration)
+        bool targetAttacking = targetAttack != null && targetAttack.IsAttacking;
+
+        if (targetAttacking)
         {
-            aiState = AIState.Rush;
-            stateTimer = rushTimeout;
-            Rush();   // 이 프레임부터 달려든다. 이미 사거리 안이면 곧바로 친다.
+            waitingForOpening = true;
+        }
+        else if (waitingForOpening)
+        {
+            StartRush();
             return;
+        }
+        else
+        {
+            engageTimer += Time.deltaTime;
+            if (engageTimer >= engageDuration)
+            {
+                StartRush();
+                return;
+            }
         }
 
         // 달리지 않는다 — 천천히 거리를 재는 모습이어야 한다.
         MoveTo(SlotPosition(StandoffDistance), stalkSpeedRatio, float.PositiveInfinity);
+    }
+
+    /// <summary>돌진을 시작한다. 이 프레임부터 달려들고, 이미 사거리 안이면 곧바로 친다.</summary>
+    void StartRush()
+    {
+        aiState = AIState.Rush;
+        stateTimer = rushTimeout;
+        waitingForOpening = false;
+        Rush();
     }
 
     /// <summary>

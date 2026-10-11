@@ -196,6 +196,9 @@ public class EnemyBrainGizmo : MonoBehaviour
         {
             case EnemyBrain.AIState.Engage:
                 text = $"Engage {brain.EngageTimer:0.00} / {brain.EngageDuration:0.00}s";
+                // 플레이어가 휘두르는 중이라 시간을 멈추고 빈틈을 기다리는 중.
+                if (brain.IsWaitingForOpening)
+                    text += " (대기)";
                 break;
             case EnemyBrain.AIState.Rush:
                 text = $"Rush {brain.StateTimer:0.00}s";
