@@ -10,7 +10,8 @@ using UnityEngine.Serialization;
 /// 상태:
 ///   Idle     — 플레이어가 감지 거리 안에 들어올 때까지 서 있는다. 한 번 감지하면 다시 돌아오지 않는다.
 ///   Hold     — 공격권이 없는 적. 바깥 링(대기 거리 + outerMargin, 라인을 zSpread만큼 위나 아래로 비낌)에서
-///              따라다니며 순서를 기다린다. 내가 선 쪽(플레이어 기준 좌/우)의 공격권이 비면,
+///              따라다니며 순서를 기다린다. 같은 쪽 Hold 적끼리는 플레이어에 가까운 순으로 자리를 나눠 선다
+///              (두 마리씩 위아래, 그 뒤로는 holdSpacing만큼 바깥 줄). 내가 선 쪽(플레이어 기준 좌/우)의 공격권이 비면,
 ///              그쪽에서 Hold 중인 적 가운데 가장 가까운 적이 가져간다.
 ///   Approach — 공격권 쪽(좌/우)의 '대기 위치'(같은 라인, 사거리보다 standoffMargin만큼 바깥)로 간다.
 ///              보통 속도로 가고 멀면 달린다. 교전 범위는 보지 않는다.
@@ -134,8 +135,12 @@ public class EnemyBrain : MonoBehaviour
     [Tooltip("공격권이 없는 적(Hold)이 대기 위치보다 얼마나 더 바깥에 서는지(m).")]
     [SerializeField] private float outerMargin = 2f;
 
-    [Tooltip("공격권이 없는 적(Hold)이 플레이어 라인에서 위나 아래로 비껴 서는 거리(m). 지금 있는 쪽(위/아래)으로 비낀다.")]
+    [Tooltip("공격권이 없는 적(Hold)이 플레이어 라인에서 위나 아래로 비껴 서는 거리(m). 순번이 짝수면 아래, 홀수면 위.")]
     [SerializeField] private float zSpread = 1.5f;
+
+    [Tooltip("같은 쪽 Hold 적이 셋 이상일 때, 두 마리마다 이만큼(m) 더 바깥 줄에 선다.")]
+    [Min(0f)]
+    [SerializeField] private float holdSpacing = 1.5f;
 
     MovementCore movement;
     AttackCore attack;
@@ -650,28 +655,63 @@ public class EnemyBrain : MonoBehaviour
     }
 
     /// <summary>
-    /// 공격권이 없는 적의 바깥 대기 위치. 지금 내가 있는 쪽(좌/우)으로 대기 거리 + outerMargin,
-    /// 플레이어 라인에서 지금 내가 있는 쪽(위/아래)으로 zSpread만큼 비낀 곳이다.
-    /// 좌우든 위아래든 그쪽이 맵 밖이면 반대쪽을 잡는다.
+    /// 공격권이 없는 적의 바깥 대기 위치. 같은 쪽 Hold 적들 사이의 순번(HoldSlotIndex)으로 자리를 나눠
+    /// 겹치지 않게 한다. 두 자리가 한 줄이다:
+    ///   0번 아래, 1번 위 — 대기 거리 + outerMargin
+    ///   2번 아래, 3번 위 — 거기서 holdSpacing만큼 더 바깥 …
+    /// 위아래는 플레이어 라인에서 zSpread만큼 비낀다. 좌우든 위아래든 그쪽이 맵 밖이면 반대쪽을 잡는다.
     /// </summary>
     Vector3 HoldPosition()
     {
         Vector3 t = target.transform.position;
         Vector3 pos = body.position;
 
-        float sideX = pos.x >= t.x ? 1f : -1f;
-        float sideZ = pos.z >= t.z ? 1f : -1f;
-        float x = t.x + sideX * (StandoffDistance + outerMargin);
+        int side = SideOf(pos);
+        int slot = HoldSlotIndex(side);
+
+        float sideX = side;
+        float sideZ = slot % 2 == 0 ? -1f : 1f;
+        float distance = StandoffDistance + outerMargin + (slot / 2) * holdSpacing;
+        float x = t.x + sideX * distance;
         float z = t.z + sideZ * zSpread;
 
         if (map != null)
         {
             Bounds b = map.Bounds;
-            if (x < b.min.x || x > b.max.x) x = t.x - sideX * (StandoffDistance + outerMargin);
+            if (x < b.min.x || x > b.max.x) x = t.x - sideX * distance;
             if (z < b.min.z || z > b.max.z) z = t.z - sideZ * zSpread;
         }
 
         return new Vector3(x, pos.y, z);
+    }
+
+    /// <summary>
+    /// 같은 쪽 Hold 적들 사이에서 나의 순번. 플레이어에 가까울수록 앞(안쪽 자리)이다 —
+    /// 공격권이 비면 들어가는 순서와 같다.
+    ///
+    /// 거리 차이가 holdSpacing의 절반 이내면 거리 대신 인스턴스 ID로 순서를 정한다. 위아래 한 쌍은
+    /// 플레이어까지 거리가 똑같아서, 거리만 보면 미세한 흔들림에 순번이 매 프레임 뒤바뀌고
+    /// 둘이 서로 자리를 바꾸려고 엇갈리며 떨게 된다.
+    /// </summary>
+    int HoldSlotIndex(int side)
+    {
+        Vector3 t = target.transform.position;
+        float myDist = FlatDistance(body.position, t);
+        float tieBand = holdSpacing * 0.5f;
+        int myId = GetInstanceID();
+
+        int index = 0;
+        foreach (EnemyBrain other in active)
+        {
+            if (other == this || other.aiState != AIState.Hold) continue;
+            if (SideOf(other.body.position) != side) continue;
+
+            float diff = FlatDistance(other.body.position, t) - myDist;
+            bool ahead = Mathf.Abs(diff) <= tieBand ? other.GetInstanceID() < myId : diff < 0f;
+            if (ahead) index++;
+        }
+
+        return index;
     }
 
     /// <summary>높이를 뺀 바닥 평면(X·Z) 거리.</summary>
