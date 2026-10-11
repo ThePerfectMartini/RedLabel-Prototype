@@ -32,11 +32,11 @@ public class EnemyBrainGizmo : MonoBehaviour
              "공격 사거리는 실제 판정처럼 좌우 양쪽에 그린다.")]
     [SerializeField] private bool showRanges = true;
 
-    [Tooltip("지금 향하는 목표 지점(대기 위치 또는 공격 위치)과 거기까지의 선(초록). Approach·Engage·Rush 중에만. " +
+    [Tooltip("지금 향하는 목표 지점(바깥 대기 위치·대기 위치·공격 위치)과 거기까지의 선(초록). Hold·Approach·Engage·Rush 중에만. " +
              "Approach 중에는 대기 위치 주변의 Engage 진입 범위 원도 함께 그린다.")]
     [SerializeField] private bool showGoal = true;
 
-    [Tooltip("목표 지점 좌우로 runDistance만큼 떨어진 세로선(하늘색). 이 선 바깥이면 달린다. Approach·Engage·Rush 중에만.")]
+    [Tooltip("목표 지점 좌우로 runDistance만큼 떨어진 세로선(하늘색). 이 선 바깥이면 달린다. Hold·Approach·Engage·Rush 중에만.")]
     [SerializeField] private bool showRunLines = true;
 
     [Header("상태 글자 (Game 뷰, 항상)")]
@@ -218,9 +218,15 @@ public class EnemyBrainGizmo : MonoBehaviour
                 break;
         }
 
-        // 맞는 중엔 State가 '풀린 뒤 돌아갈 상태(Approach)'를 가리키므로 따로 표시한다.
+        // 맞는 중엔 State가 '풀린 뒤 돌아갈 상태(Approach 또는 Hold)'를 가리키므로 따로 표시한다.
         if (brain.IsStunned)
             text += " (피격)";
+
+        // 쥐고 있는 공격권. 플레이어 왼쪽이면 [L], 오른쪽이면 [R].
+        if (brain.TokenSide < 0)
+            text = "[L] " + text;
+        else if (brain.TokenSide > 0)
+            text = "[R] " + text;
 
         return text;
     }
@@ -229,6 +235,7 @@ public class EnemyBrainGizmo : MonoBehaviour
     {
         switch (s)
         {
+            case EnemyBrain.AIState.Hold:     return Color.gray;
             case EnemyBrain.AIState.Approach: return GoalColor;
             case EnemyBrain.AIState.Engage:   return EngageColor;
             case EnemyBrain.AIState.Rush:     return new Color(1f, 0.3f, 0.3f);
