@@ -32,7 +32,6 @@ using UnityEngine.Serialization;
 ///
 /// [준비물] 이 오브젝트 또는 그 자식에 MovementCore + AttackCore + StateMachine, 계층 위쪽에 Character.
 ///          target에 플레이어의 Character, attackSkill에 이 적이 쓸 공격.
-///          같은 적에 EnemyAutoAttackTest / EnemyPatrolTest가 켜져 있으면 입력이 겹치므로 꺼둔다.
 /// </summary>
 public class EnemyBrain : MonoBehaviour
 {
