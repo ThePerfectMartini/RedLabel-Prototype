@@ -315,6 +315,10 @@ public class AttackCore : MonoBehaviour
             if (target == null) continue;        // 바닥·배경 등 캐릭터가 아닌 것
             if (target == character) continue;   // 자기 자신
 
+            // 같은 진영은 때리지 않는다. Neutral은 진영이 없는 것으로 보고 누구와도 맞는다.
+            // 걸러진 대상은 명중으로도 치지 않으므로, 히트 확인 콤보도 상대 진영을 맞혔을 때만 이어진다.
+            if (character.Team != Team.Neutral && target.Team == character.Team) continue;
+
             // 넉백·에어본. 세기는 맞은 쪽이 아니라 때린 쪽 수치로 정한다.
             // 다만 지상용·공중용 중 어느 수치를 쓸지는 맞은 쪽 상태가 정한다 — 서 있는 상대와
             // 이미 떠 있는 상대(저글링)는 같은 공격이라도 원하는 결과가 다르기 때문이다.
