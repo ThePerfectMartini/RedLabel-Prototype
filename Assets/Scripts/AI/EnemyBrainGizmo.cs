@@ -203,6 +203,13 @@ public class EnemyBrainGizmo : MonoBehaviour
             case EnemyBrain.AIState.Rush:
                 text = $"Rush {brain.StateTimer:0.00}s";
                 break;
+            case EnemyBrain.AIState.Attack:
+                // 지금 콤보 단계(스킬 에셋 이름)와, 그 단계가 맞았는지. 맞았으면 다음 단계로 이어진다.
+                SkillData skill = brain.CurrentAttackSkill;
+                text = skill != null ? $"Attack {skill.name}" : "Attack";
+                if (brain.AttackHitLanded)
+                    text += " (명중)";
+                break;
             case EnemyBrain.AIState.Recover:
                 text = $"Recover {brain.StateTimer:0.00}s";
                 break;

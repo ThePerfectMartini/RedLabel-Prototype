@@ -81,6 +81,12 @@ public class AttackCore : MonoBehaviour
     /// </summary>
     int attackStartCount;
 
+    /// <summary>
+    /// 지금 동작의 타격 판정이 누군가를 맞혔는지. 판정이 나갈 때 기록하고, 새 동작(콤보 다음 단계 포함)이 시작되면 끈다.
+    /// AI가 맞혔을 때만 콤보를 잇는 데 쓴다.
+    /// </summary>
+    bool hitLanded;
+
     // ── 기즈모 표시용. 판정이 일어난 '그 순간'의 상자를 기억한다.
     Vector3 lastHitCenter;
     Vector3 lastHitSize;
@@ -95,6 +101,9 @@ public class AttackCore : MonoBehaviour
 
     /// <summary>공격 동작이 시작된 누적 횟수. StateMachine이 클립을 다시 틀 때를 잡는 데 쓴다.</summary>
     public int AttackStartCount => attackStartCount;
+
+    /// <summary>지금 동작의 타격이 누군가를 맞혔는지. 판정 전이거나 빗나갔으면 false다. AI가 히트 확인 콤보에 쓴다.</summary>
+    public bool HitLanded => hitLanded;
 
     void Awake()
     {
@@ -223,6 +232,7 @@ public class AttackCore : MonoBehaviour
     {
         currentSkill = skill;
         comboWindowOpen = false;
+        hitLanded = false;
         startedAirborne = !movement.IsGrounded;
 
         // 동작 길이는 그 스킬의 클립에서 그때그때 읽는다. 스킬마다 클립이 다르기 때문이다.
@@ -347,6 +357,10 @@ public class AttackCore : MonoBehaviour
 
         if (count == 0)
             Debug.Log($"[공격] {character.name} → 허공 ({currentSkill.name})", character.gameObject);
+
+        // 한 동작에 타격 프레임이 여럿이어도, 한 번이라도 맞혔으면 명중으로 친다.
+        if (count > 0)
+            hitLanded = true;
 
         lastHitCenter = center;
         lastHitSize = size;

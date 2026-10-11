@@ -17,7 +17,8 @@ using UnityEngine.Serialization;
 ///   Rush     — 공격 위치(사거리 안쪽)로 달려간다. 사거리에 들어오는 순간 바로 친다.
 ///              돌진 중에 플레이어가 공격을 시작해도 멈추지 않는다 — 받아치기는 플레이어의 몫이다.
 ///              rushTimeout 안에 못 닿으면 포기하고 Approach로.
-///   Attack   — 공격 동작이 끝날 때까지 입력을 넣지 않는다(Lunge 속도가 지워지지 않게).
+///   Attack   — 공격 동작이 끝날 때까지 이동 입력을 넣지 않는다(Lunge 속도가 지워지지 않게).
+///              타격이 맞았을 때만 콤보 다음 단계를 잇는다(히트 확인). 빗나가면 그 단계로 끝난다.
 ///   Recover  — 제자리에서 숨을 고른다. 플레이어가 반격할 틈이다. recoverDuration이 지나면 Approach로.
 ///
 /// 판단 범위(교전 범위)와 공격 사거리를 나눠둔 이유: 사거리 안에서만 시간을 세면 조금만 움직여도
@@ -143,6 +144,12 @@ public class EnemyBrain : MonoBehaviour
     /// <summary>Rush·Recover에서 남은 시간.</summary>
     public float StateTimer => stateTimer;
 
+    /// <summary>지금 휘두르고 있는 콤보 단계의 스킬. Awake 전이면 null.</summary>
+    public SkillData CurrentAttackSkill => attack != null ? attack.CurrentSkill : null;
+
+    /// <summary>지금 콤보 단계의 타격이 맞았는지.</summary>
+    public bool AttackHitLanded => attack != null && attack.HitLanded;
+
     public float DetectRange => detectRange;
 
     public float RunDistance => runDistance;
@@ -265,6 +272,14 @@ public class EnemyBrain : MonoBehaviour
                 {
                     aiState = AIState.Recover;
                     stateTimer = recoverDuration;
+                }
+                else if (attack.HitLanded)
+                {
+                    // 히트 확인 콤보. 맞혔을 때만 다음 단계를 누른다. 콤보 창이 아직 안 열렸거나
+                    // 마지막 단계면 AttackCore가 알아서 버리므로, 열릴 때까지 매 프레임 눌러둔다.
+                    // 그래서 2타가 나가는 타이밍은 클립의 OnComboWindowOpen 이벤트(없으면 타격 프레임)가 정한다.
+                    // 콤보를 시작한 스킬을 넘겨야 AttackCore가 같은 콤보의 입력으로 알아본다.
+                    attack.TryAttack(attackSkill);
                 }
                 break;
 
