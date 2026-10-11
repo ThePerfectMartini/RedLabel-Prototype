@@ -13,7 +13,11 @@ MonoBehaviour:
   m_Name: "\uC801 \uACF5\uACA9"
   m_EditorClassIdentifier: Assembly-CSharp::SkillData
   animatorStateName: Attack
-  nextCombo: {fileID: 0}
+  useComboInputTiming: 1
+  nextCombo: {fileID: 11400000, guid: 44ab8fc155603054880a201a309317ab, type: 2}
+  cancelsBasicAttack: 0
+  attackType: 0
+  lungeDistance: 1
   attackDistance: 1
   attackBoxSize: {x: 1.5, y: 1, z: 1}
   damage: 10
