@@ -36,6 +36,8 @@ using UnityEngine.Serialization;
 /// 대기하던 적이 더 가까워졌을 때만 넘어간다 — 기회가 생긴 적이 들어오는 것처럼 보이게.
 /// 공격권 쪽 자리가 맵 밖이면(플레이어가 벽에 붙으면) 그 공격권은 아무도 쓸 수 없다.
 /// 공격권은 별도 매니저 없이 이 클래스의 static으로 관리한다(적이 1종이라 따로 뺄 이유가 아직 없다).
+/// 캐릭터끼리 몸 충돌이 없어서, 움직일 때는 가까운 적에게서 멀어지는 방향을 더해 서로 비켜 간다(separationRadius).
+/// 서 있을 때는 그 절반 안까지 붙었을 때만 비켜선다.
 ///
 /// 판단 범위(교전 범위)와 공격 사거리를 나눠둔 이유: 사거리 안에서만 시간을 세면 조금만 움직여도
 /// 초기화되어 피하기가 너무 쉽다. 넓은 범위에서 재고, 칠 때는 직접 달려들어 거리를 좁힌다.
@@ -160,6 +162,15 @@ public class EnemyBrain : MonoBehaviour
     [Min(0f)]
     [SerializeField] private float holdSpacing = 1.5f;
 
+    [Tooltip("다른 적과 이 거리(m) 안이면 이동 중에 서로 멀어지려 한다. 캐릭터끼리 몸 충돌이 없어서 이게 없으면 겹친다. " +
+             "서 있을 때는 이 거리의 절반 안으로 들어왔을 때만 비켜선다.")]
+    [Min(0.01f)]
+    [SerializeField] private float separationRadius = 1.2f;
+
+    [Tooltip("이동 중 밀어내기의 세기. 클수록 목표로 가는 것보다 간격 유지를 우선한다.")]
+    [Min(0f)]
+    [SerializeField] private float separationWeight = 1f;
+
     [Header("Hold 움직임")]
     [Tooltip("불감대 최솟값(m). 대기 자리가 지금 위치에서 불감대보다 멀어져야 따라 움직인다. " +
              "적마다 최솟값~최댓값 사이에서 한 번 정해서, 플레이어가 움직여도 대기 적들이 일제히 따라오지 않는다.")]
@@ -278,6 +289,9 @@ public class EnemyBrain : MonoBehaviour
 
     /// <summary>마지막으로 계산한 대기 자리. 불감대 원의 중심이다.</summary>
     public Vector3 HoldSlot => holdSlot;
+
+    /// <summary>이동 중 밀어내기 거리. 서 있을 때는 이 절반이 기준이다.</summary>
+    public float SeparationRadius => separationRadius;
 
     /// <summary>Rush·Recover에서 남은 시간.</summary>
     public float StateTimer => stateTimer;
@@ -459,8 +473,7 @@ public class EnemyBrain : MonoBehaviour
                 break;
 
             case AIState.Recover:
-                movement.SetMoveInput(Vector2.zero);
-                movement.FaceTowards(target.transform.position.x);
+                StandStill();
 
                 // 숨 고르는 사이 같은 쪽 대기 적이 나보다 플레이어에 가까워지면(플레이어가 피하며 그쪽으로 갔다든지)
                 // 공격권을 내놓는다. 그 적이 다음 프레임 Hold에서 가져간다.
@@ -547,8 +560,7 @@ public class EnemyBrain : MonoBehaviour
             default:
                 // Settled·Reacting: 제자리에 서서 플레이어를 바라본다. 목표 지점은 표시용으로만 갱신한다.
                 goal = holdSlot + fidgetOffset;
-                movement.SetMoveInput(Vector2.zero);
-                movement.FaceTowards(target.transform.position.x);
+                StandStill();
                 break;
         }
     }
@@ -770,8 +782,12 @@ public class EnemyBrain : MonoBehaviour
     // ── 이동
 
     /// <summary>
-    /// 목표 지점으로 걷거나 달린다. 도착했으면 바로 선다. 어느 쪽이든 늘 플레이어를 바라본다 —
+    /// 목표 지점으로 걷거나 달린다. 도착했으면 선다. 어느 쪽이든 늘 플레이어를 바라본다 —
     /// 물러날 때도 등을 보이지 않는다.
+    ///
+    /// 가는 동안 가까운 다른 적에게서 멀어지는 방향을 더해서, 서로 뚫고 지나가지 않고 비켜 간다.
+    /// 더한 뒤 크기를 speedScale로 묶는다 — 밀려나는 힘 때문에 천천히 걷던 적이 빨라지면 안 된다.
+    /// 달리기·바라보는 방향은 밀어내기와 상관없이 목표 기준으로 정한다.
     /// </summary>
     /// <param name="speedScale">속도 배율(0~1). 입력 크기를 줄여 느리게 걷는다.</param>
     /// <param name="runThreshold">목표까지 X 거리가 이보다 멀면 달린다. 달리지 않으려면 PositiveInfinity.</param>
@@ -786,20 +802,60 @@ public class EnemyBrain : MonoBehaviour
 
         if (arrived)
         {
-            // 입력을 아예 안 넣으면 걷던 속도가 마찰로 서서히 죽으며 미끄러지므로, 0을 넣어 바로 세운다.
-            movement.SetMoveInput(Vector2.zero);
+            StandStill();
+            return true;
         }
-        else
-        {
-            // 뒷걸음질(플레이어 반대쪽으로 가는 중)엔 달리지 않는다. 플레이어를 보며 뒤로 달리면 문워크가 된다.
-            bool towardTarget = toGoal.x * (target.transform.position.x - pos.x) > 0f;
-            bool run = towardTarget && Mathf.Abs(toGoal.x) > runThreshold;
-            movement.SetMoveInput(toGoal.normalized * speedScale, run);
-        }
+
+        // 뒷걸음질(플레이어 반대쪽으로 가는 중)엔 달리지 않는다. 플레이어를 보며 뒤로 달리면 문워크가 된다.
+        bool towardTarget = toGoal.x * (target.transform.position.x - pos.x) > 0f;
+        bool run = towardTarget && Mathf.Abs(toGoal.x) > runThreshold;
+
+        Vector2 input = toGoal.normalized * speedScale + Separation(separationRadius) * separationWeight;
+        movement.SetMoveInput(Vector2.ClampMagnitude(input, speedScale), run);
 
         // SetMoveInput이 입력 방향으로 돌려놓은 걸 플레이어 쪽으로 다시 돌린다. 같은 프레임 안이라 깜빡이지 않는다.
         movement.FaceTowards(target.transform.position.x);
-        return arrived;
+        return false;
+    }
+
+    /// <summary>
+    /// 서서 플레이어를 바라본다. 입력을 아예 안 넣으면 남은 속도가 마찰로 서서히 죽으며 미끄러지므로 0을 넣어 바로 세운다.
+    ///
+    /// 다만 다른 적이 separationRadius의 절반 안까지 들어와 있으면 느린 걸음으로 비켜선다.
+    /// 보통 간격에선 가만히 있는다 — 서 있는 적까지 늘 밀어내면 자리 근처에서 미세하게 계속 걸어 떨려 보인다.
+    /// </summary>
+    void StandStill()
+    {
+        Vector2 push = Separation(separationRadius * 0.5f);
+        movement.SetMoveInput(push.sqrMagnitude > 0.0001f ? push.normalized * stalkSpeedRatio : Vector2.zero);
+        movement.FaceTowards(target.transform.position.x);
+    }
+
+    /// <summary>
+    /// radius 안에 있는 다른 적들에게서 멀어지는 방향의 합. 가까울수록 세다(경계에서 0, 딱 붙으면 1).
+    /// 맞는 중이거나 Idle인 적도 몸이 있으니 피한다. 플레이어는 보지 않는다.
+    /// 완전히 같은 자리에 겹쳐 있으면 방향을 정할 수 없어서, 인스턴스 ID 순서로 하나는 위(+Z), 하나는 아래로 민다.
+    /// </summary>
+    Vector2 Separation(float radius)
+    {
+        Vector3 pos = body.position;
+        int myId = GetInstanceID();
+        Vector2 push = Vector2.zero;
+
+        foreach (EnemyBrain other in active)
+        {
+            if (other == this) continue;
+
+            Vector3 o = other.body.position;
+            Vector2 away = new Vector2(pos.x - o.x, pos.z - o.z);
+            float d = away.magnitude;
+            if (d >= radius) continue;
+
+            Vector2 dir = d > 0.0001f ? away / d : new Vector2(0f, myId < other.GetInstanceID() ? 1f : -1f);
+            push += dir * (1f - d / radius);
+        }
+
+        return push;
     }
 
     /// <summary>

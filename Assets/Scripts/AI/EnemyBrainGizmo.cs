@@ -5,7 +5,7 @@ using UnityEngine;
 ///
 /// 두 가지를 그린다:
 ///  1. 기즈모 — 이 적을 선택했을 때만 Scene 뷰(와 Gizmos 버튼을 켠 Game 뷰)에 그린다.
-///     감지 범위(노랑) · 교전 범위(주황) · 대기 거리(파랑) 원, 공격 사거리(빨강) 사각형,
+///     감지 범위(노랑) · 교전 범위(주황) · 대기 거리(파랑) · 밀어내기 범위 절반(보라) 원, 공격 사거리(빨강) 사각형,
 ///     목표 지점과 이동선, Approach 중의 Engage 진입 범위(초록), 달리기 경계선(하늘색).
 ///  2. 상태 글자 — Game 뷰의 적 머리 위에 항상 띄운다. 정식 빌드에는 들어가지 않는다
 ///     (에디터와 Development Build에서만 컴파일된다).
@@ -26,9 +26,10 @@ public class EnemyBrainGizmo : MonoBehaviour
     static readonly Color AttackColor = Color.red;
     static readonly Color GoalColor = Color.green;
     static readonly Color RunLineColor = Color.cyan;
+    static readonly Color SeparationColor = new Color(0.7f, 0.3f, 1f);
 
     [Header("기즈모 (선택했을 때만)")]
-    [Tooltip("감지 범위(노랑) · 교전 범위(주황) · 대기 거리(파랑) 원과 공격 사거리(빨강) 사각형. " +
+    [Tooltip("감지 범위(노랑) · 교전 범위(주황) · 대기 거리(파랑) · 밀어내기 범위 절반(보라) 원과 공격 사거리(빨강) 사각형. " +
              "공격 사거리는 실제 판정처럼 좌우 양쪽에 그린다.")]
     [SerializeField] private bool showRanges = true;
 
@@ -74,6 +75,9 @@ public class EnemyBrainGizmo : MonoBehaviour
         if (showRanges)
         {
             DrawCircle(center, brain.DetectRange, DetectColor);
+
+            // 밀어내기 범위의 절반. 두 적의 원이 겹치기 시작하는 순간이 이동 중 서로 밀어내기 시작하는 순간이다.
+            DrawCircle(center, brain.SeparationRadius * 0.5f, SeparationColor);
 
             // 아래 값들은 스킬 사거리에서 나온다. 스킬이 비어 있으면 그릴 수 없다.
             if (brain.HasSkill)

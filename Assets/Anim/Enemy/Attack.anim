@@ -21,19 +21,19 @@ AnimationClip:
   - serializedVersion: 2
     curve:
     - time: 0
-      value: {fileID: 21300000, guid: 13ab057c9275bbf4987b7a567a919865, type: 3}
+      value: {fileID: 21300000, guid: 6b4a1d1e92a015246b06d8d3f8208c15, type: 3}
     - time: 0.041666668
-      value: {fileID: 21300000, guid: 5640a517adf9cac4a878df670d76cbef, type: 3}
+      value: {fileID: 21300000, guid: 66a8c123c9989fe47a9b25b06928bf74, type: 3}
     - time: 0.083333336
-      value: {fileID: 21300000, guid: 4ea36f20ca280b74f9a2229a3332c464, type: 3}
+      value: {fileID: 21300000, guid: ef87e86927a0b7b43aa65fd631070e3d, type: 3}
     - time: 0.125
-      value: {fileID: 21300000, guid: 6f3ea9a0b5981344abf8be379a5c5225, type: 3}
-    - time: 0.20833333
-      value: {fileID: 21300000, guid: 4ea36f20ca280b74f9a2229a3332c464, type: 3}
+      value: {fileID: 21300000, guid: 8a894d0b2f471a44b80bc03e0bd60177, type: 3}
     - time: 0.25
-      value: {fileID: 21300000, guid: 5640a517adf9cac4a878df670d76cbef, type: 3}
+      value: {fileID: 21300000, guid: ef87e86927a0b7b43aa65fd631070e3d, type: 3}
     - time: 0.29166666
-      value: {fileID: 21300000, guid: 5640a517adf9cac4a878df670d76cbef, type: 3}
+      value: {fileID: 21300000, guid: 66a8c123c9989fe47a9b25b06928bf74, type: 3}
+    - time: 0.33333334
+      value: {fileID: 21300000, guid: 6b4a1d1e92a015246b06d8d3f8208c15, type: 3}
     attribute: m_Sprite
     path: 
     classID: 212
@@ -56,19 +56,19 @@ AnimationClip:
       isIntCurve: 0
       isSerializeReferenceCurve: 0
     pptrCurveMapping:
-    - {fileID: 21300000, guid: 13ab057c9275bbf4987b7a567a919865, type: 3}
-    - {fileID: 21300000, guid: 5640a517adf9cac4a878df670d76cbef, type: 3}
-    - {fileID: 21300000, guid: 4ea36f20ca280b74f9a2229a3332c464, type: 3}
-    - {fileID: 21300000, guid: 6f3ea9a0b5981344abf8be379a5c5225, type: 3}
-    - {fileID: 21300000, guid: 4ea36f20ca280b74f9a2229a3332c464, type: 3}
-    - {fileID: 21300000, guid: 5640a517adf9cac4a878df670d76cbef, type: 3}
-    - {fileID: 21300000, guid: 5640a517adf9cac4a878df670d76cbef, type: 3}
+    - {fileID: 21300000, guid: 6b4a1d1e92a015246b06d8d3f8208c15, type: 3}
+    - {fileID: 21300000, guid: 66a8c123c9989fe47a9b25b06928bf74, type: 3}
+    - {fileID: 21300000, guid: ef87e86927a0b7b43aa65fd631070e3d, type: 3}
+    - {fileID: 21300000, guid: 8a894d0b2f471a44b80bc03e0bd60177, type: 3}
+    - {fileID: 21300000, guid: ef87e86927a0b7b43aa65fd631070e3d, type: 3}
+    - {fileID: 21300000, guid: 66a8c123c9989fe47a9b25b06928bf74, type: 3}
+    - {fileID: 21300000, guid: 6b4a1d1e92a015246b06d8d3f8208c15, type: 3}
   m_AnimationClipSettings:
     serializedVersion: 2
     m_AdditiveReferencePoseClip: {fileID: 0}
     m_AdditiveReferencePoseTime: 0
     m_StartTime: 0
-    m_StopTime: 0.3333333
+    m_StopTime: 0.375
     m_OrientationOffsetY: 0
     m_Level: 0
     m_CycleOffset: 0
@@ -88,8 +88,15 @@ AnimationClip:
   m_HasGenericRootTransform: 0
   m_HasMotionFloatCurves: 0
   m_Events:
-  - time: 0.125
+  - time: 0.083333336
     functionName: OnAttackHitFrame
+    data: 
+    objectReferenceParameter: {fileID: 0}
+    floatParameter: 0
+    intParameter: 0
+    messageOptions: 0
+  - time: 0.29166666
+    functionName: OnComboWindowOpen
     data: 
     objectReferenceParameter: {fileID: 0}
     floatParameter: 0

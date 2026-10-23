@@ -18,12 +18,13 @@ MonoBehaviour:
   cancelsBasicAttack: 0
   attackType: 0
   lungeDistance: 1
-  attackDistance: 1
-  attackBoxSize: {x: 1.5, y: 1, z: 1}
+  attackDistance: 2
+  attackHeight: 0
+  attackBoxSize: {x: 2, y: 2, z: 1}
   damage: 10
   hitStunDuration: 0.8
   groundKnockbackPower: 5
-  isLauncher: 0
+  isLauncher: 1
   groundLaunchPower: 8
   airborneKnockbackPower: 7
   airborneLaunchPower: 4
