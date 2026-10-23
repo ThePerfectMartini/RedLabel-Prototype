@@ -31,6 +31,7 @@ public enum CharacterState
 /// 착지하면 쓰러짐이 이어진다: 착지(AirborneLanded) 클립 끝까지 → 누워서(LieDown) lieDownDuration초 →
 /// 일어서기(GetUp) 클립 끝까지. 그 뒤 경직이 남아 있으면 피격으로 넘어간다.
 /// 쓰러져 있는 도중에 맞으면 쓰러짐은 거기서 끊기고 피격(띄웠으면 띄워짐)으로 간다.
+/// 이때 누운 시간은 새로 세지 않는다 — 다시 착지해 누우면 남은 시간만 이어서 센다(떠 있는 동안은 멈춤).
 ///
 /// 애니메이터의 주인은 이 컴포넌트 하나다. 다른 곳에서 animator.Play를 부르면 서로 덮어쓴다.
 ///
@@ -60,7 +61,8 @@ public class StateMachine : MonoBehaviour
     /// <summary>일어서기 클립이 끝났는지 볼 때 쓰는 해시.</summary>
     static readonly int GetUpStateHash = Animator.StringToHash(StateNames[(int)CharacterState.GetUp]);
 
-    [Tooltip("띄워졌다 착지한 뒤 누워 있는 시간(초). 착지 클립이 끝난 뒤부터 센다.")]
+    [Tooltip("띄워졌다 착지한 뒤 누워 있는 시간(초). 착지 클립이 끝난 뒤부터 센다. " +
+             "누운 채로 맞아 다시 떠도 새로 세지 않고, 다시 누우면 남은 시간만 이어서 센다.")]
     [SerializeField] private float lieDownDuration = 1f;
 
     MovementCore movement;
@@ -99,7 +101,7 @@ public class StateMachine : MonoBehaviour
     /// </summary>
     CharacterState downPhase = CharacterState.Idle;
 
-    /// <summary>LieDown 단계에서 남은 누운 시간.</summary>
+    /// <summary>LieDown 단계에서 남은 누운 시간. 서 있다가 맞을 때 채우고, 누운 채 다시 맞아도 이어서 쓴다.</summary>
     float lieDownTimer;
 
     CharacterState state = CharacterState.Idle;
@@ -142,6 +144,11 @@ public class StateMachine : MonoBehaviour
     /// <param name="launched">공중으로 띄웠거나 이미 공중에 있는 대상을 때렸으면 true. 착지할 때까지 Airborne이 된다.</param>
     public void TakeHit(float stunDuration, bool launched)
     {
+        // 누워 있거나 맞아서 떠 있는 중이 아니면 새로 쓰러지는 것이므로 누운 시간을 새로 채운다.
+        // 그 밖엔 남은 시간을 그대로 둬서, 누운 채로 계속 맞아도 결국 일어서게 한다.
+        if (!airborneHit && downPhase == CharacterState.Idle)
+            lieDownTimer = lieDownDuration;
+
         hitTimer = stunDuration;
         hitRetriggered = true;
         airborneHit = launched;
@@ -264,10 +271,7 @@ public class StateMachine : MonoBehaviour
         {
             case CharacterState.AirborneLanded:
                 if (state == CharacterState.AirborneLanded && ClipFinished(AirborneLandedStateHash))
-                {
                     downPhase = CharacterState.LieDown;
-                    lieDownTimer = lieDownDuration;
-                }
                 break;
 
             case CharacterState.LieDown:

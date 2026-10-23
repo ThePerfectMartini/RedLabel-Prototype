@@ -71,6 +71,10 @@ public class SkillData : ScriptableObject
     [Tooltip("몸 중심에서 공격 판정 상자 중심까지의 거리. 팔이 닿는 거리라고 보면 된다.")]
     public float attackDistance = 1f;
 
+    [Tooltip("몸 중심에서 공격 판정 상자 중심까지의 높이. 양수면 위로 올라간다. " +
+             "상자가 땅속에 묻히지 않게 띄울 때 쓴다.")]
+    public float attackHeight = 0f;
+
     [Tooltip("공격 판정 상자의 크기. X는 바라보는 쪽으로의 길이(리치), Y는 높이, Z는 좌우 폭.")]
     public Vector3 attackBoxSize = new Vector3(1.5f, 1f, 1f);
 
@@ -104,6 +108,14 @@ public class SkillData : ScriptableObject
     [Tooltip("이미 떠 있는 대상의 수직 속도를 이 값으로 덮어쓴다. 양수면 다시 솟고, 음수면 내려찍힌다. " +
              "0이면 수직에 손대지 않아서, 올라가던 대상은 계속 올라가고 떨어지던 대상은 계속 떨어진다.")]
     public float airborneLaunchPower = 4f;
+
+    [Header("누운 대상에게")]
+    [Tooltip("쓰러져 있는(착지·누움·일어서기) 대상을 밀어내는 속도. 바닥에 있으므로 지상처럼 마찰로 멈춘다.")]
+    public float downedKnockbackPower = 5f;
+
+    [Tooltip("쓰러져 있는 대상을 띄우는 힘. jumpPower와 같은 단위다. '띄우는 공격' 체크와 무관하게 늘 쓰인다. " +
+             "0이면 바닥으로만 밀리고, 0보다 크면 다시 띄워진다.")]
+    public float downedLaunchPower = 0f;
 
     // 선입력이 없으면 다음 단계로 넘어갈 길도 없으니, 인스펙터에 남아 헷갈리지 않게 비운다.
     void OnValidate()

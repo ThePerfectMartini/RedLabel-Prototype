@@ -296,7 +296,9 @@ public class AttackCore : MonoBehaviour
         if (currentSkill == null) return;
 
         // 판정 시점의 위치·방향으로 계산한다. 누른 순간이 아니라 칼이 닿는 순간 기준이다.
-        Vector3 center = body.position + movement.FacingDir * currentSkill.attackDistance;
+        Vector3 center = body.position
+                       + movement.FacingDir * currentSkill.attackDistance
+                       + Vector3.up * currentSkill.attackHeight;
         Vector3 size = currentSkill.attackBoxSize;
 
         Collider[] hits = Physics.OverlapBox(
@@ -320,9 +322,10 @@ public class AttackCore : MonoBehaviour
             if (character.Team != Team.Neutral && target.Team == character.Team) continue;
 
             // 넉백·에어본. 세기는 맞은 쪽이 아니라 때린 쪽 수치로 정한다.
-            // 다만 지상용·공중용 중 어느 수치를 쓸지는 맞은 쪽 상태가 정한다 — 서 있는 상대와
-            // 이미 떠 있는 상대(저글링)는 같은 공격이라도 원하는 결과가 다르기 때문이다.
+            // 다만 지상용·공중용·누운 대상용 중 어느 수치를 쓸지는 맞은 쪽 상태가 정한다 — 서 있는 상대와
+            // 이미 떠 있는 상대(저글링), 쓰러진 상대는 같은 공격이라도 원하는 결과가 다르기 때문이다.
             MovementCore targetMove = target.GetComponentInChildren<MovementCore>();
+            StateMachine targetState = target.GetComponentInChildren<StateMachine>();
 
             // 이미 떠 있는 대상을 때렸거나 위로 띄웠는지. 맞은 쪽 StateMachine이 Airborne으로 갈지 정하는 데 쓴다.
             bool launched = false;
@@ -330,16 +333,17 @@ public class AttackCore : MonoBehaviour
             if (targetMove != null)
             {
                 bool targetAirborne = !targetMove.IsGrounded;
+                bool targetDown = !targetAirborne && targetState != null && targetState.IsDown;
 
-                float knockbackPower = targetAirborne
-                    ? currentSkill.airborneKnockbackPower
-                    : currentSkill.groundKnockbackPower;
+                float knockbackPower = targetAirborne ? currentSkill.airborneKnockbackPower
+                                     : targetDown ? currentSkill.downedKnockbackPower
+                                     : currentSkill.groundKnockbackPower;
 
                 // 지상 런치는 '띄우는 공격'일 때만 쓴다. 꺼져 있으면 0이라 바닥으로만 밀린다.
-                // 공중 런치는 그 체크와 무관하게 늘 쓰인다(0이면 수직에 손대지 않는다).
-                float launchPower = targetAirborne
-                    ? currentSkill.airborneLaunchPower
-                    : (currentSkill.isLauncher ? currentSkill.groundLaunchPower : 0f);
+                // 공중·누운 대상 런치는 그 체크와 무관하게 늘 쓰인다(공중은 0이면 수직에 손대지 않는다).
+                float launchPower = targetAirborne ? currentSkill.airborneLaunchPower
+                                  : targetDown ? currentSkill.downedLaunchPower
+                                  : (currentSkill.isLauncher ? currentSkill.groundLaunchPower : 0f);
 
                 Vector3 knockVelocity = movement.FacingDir * knockbackPower;
                 knockVelocity.y = launchPower;
@@ -349,7 +353,6 @@ public class AttackCore : MonoBehaviour
             }
 
             // 경직. 이 시간 동안 대상은 Hit 상태가 되어 이동·공격 입력이 막힌다. 띄웠으면 착지할 때까지 Airborne이다.
-            StateMachine targetState = target.GetComponentInChildren<StateMachine>();
             if (targetState != null)
                 targetState.TakeHit(currentSkill.hitStunDuration, launched);
 

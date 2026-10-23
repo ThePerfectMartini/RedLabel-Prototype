@@ -19,7 +19,8 @@ MonoBehaviour:
   attackType: 1
   lungeDistance: 0.5
   attackDistance: 2
-  attackBoxSize: {x: 3, y: 3, z: 1}
+  attackHeight: 1.5
+  attackBoxSize: {x: 3, y: 1.5, z: 1}
   damage: 5
   hitStunDuration: 0.8
   groundKnockbackPower: 5
