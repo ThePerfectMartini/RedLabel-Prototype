@@ -33,6 +33,8 @@ public enum CharacterState
 /// 쓰러져 있는 도중에 맞으면 쓰러짐은 거기서 끊기고 피격(띄웠으면 띄워짐)으로 간다.
 /// 이때 누운 시간은 새로 세지 않는다 — 다시 착지해 누우면 남은 시간만 이어서 센다(떠 있는 동안은 멈춤).
 ///
+/// 죽으면(Die) 같은 쓰러짐 흐름을 타되 누운 채로 일어서지 않는다. 지상에서 죽으면 착지 클립 없이 곧바로 눕는다.
+///
 /// 애니메이터의 주인은 이 컴포넌트 하나다. 다른 곳에서 animator.Play를 부르면 서로 덮어쓴다.
 ///
 /// [준비물] 같은 오브젝트에 MovementCore + AttackCore.
@@ -104,10 +106,16 @@ public class StateMachine : MonoBehaviour
     /// <summary>LieDown 단계에서 남은 누운 시간. 서 있다가 맞을 때 채우고, 누운 채 다시 맞아도 이어서 쓴다.</summary>
     float lieDownTimer;
 
+    /// <summary>죽었는지. Health가 Die로 켜고, 다시 꺼지지 않는다.</summary>
+    bool dead;
+
     CharacterState state = CharacterState.Idle;
 
     /// <summary>지금 상태.</summary>
     public CharacterState State => state;
+
+    /// <summary>죽었는지. 죽으면 누운 채로 일어서지 않고, 더는 공격을 맞지 않는다.</summary>
+    public bool IsDead => dead;
 
     /// <summary>착지 후 쓰러져 있는 중인지(착지·누움·일어서기). 이동·공격 입력을 막는 데 쓴다.</summary>
     public bool IsDown => state == CharacterState.AirborneLanded
@@ -157,6 +165,19 @@ public class StateMachine : MonoBehaviour
         downPhase = CharacterState.Idle;
 
         attack.Cancel();
+    }
+
+    /// <summary>
+    /// 체력이 다 떨어졌을 때 Health가 부른다. 같은 타격의 TakeHit 뒤에 불려야 한다 — 띄워졌는지를 TakeHit이 정하기 때문이다.
+    /// 띄워졌으면 착지할 때까지 Airborne → 착지 클립 → 누움으로 가고, 지상이면 곧바로 눕는다. 누운 뒤엔 일어서지 않는다.
+    /// </summary>
+    public void Die()
+    {
+        dead = true;
+        hitTimer = 0f;
+
+        if (!airborneHit)
+            downPhase = CharacterState.LieDown;
     }
 
     void Update()
@@ -275,6 +296,9 @@ public class StateMachine : MonoBehaviour
                 break;
 
             case CharacterState.LieDown:
+                // 죽었으면 일어서지 않는다. 사라지는 건 Health가 맡는다.
+                if (dead) break;
+
                 lieDownTimer -= Time.deltaTime;
                 if (lieDownTimer <= 0f)
                     downPhase = CharacterState.GetUp;

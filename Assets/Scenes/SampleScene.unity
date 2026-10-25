@@ -632,6 +632,7 @@ GameObject:
   - component: {fileID: 358507264}
   - component: {fileID: 358507263}
   - component: {fileID: 358507262}
+  - component: {fileID: 358507266}
   m_Layer: 0
   m_Name: Enemy (4)
   m_TagString: Untagged
@@ -681,17 +682,14 @@ MonoBehaviour:
   rushTimeout: 3
   recoverDuration: 1
   outerMargin: 2
-  zSpread: 1.5
-  holdSpacing: 1.5
+  receiveDuration: 0.7
   separationRadius: 1.2
   separationWeight: 1
-  holdLeashMin: 0.8
-  holdLeashMax: 2
-  reactionDelayMin: 0.15
-  reactionDelayMax: 0.5
-  fidgetIntervalMin: 2
-  fidgetIntervalMax: 5
-  fidgetDistance: 0.4
+  wanderRange: 4
+  wanderMoveMin: 0.8
+  wanderMoveMax: 2
+  wanderPauseMin: 0.3
+  wanderPauseMax: 1
 --- !u!114 &358507264
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -724,6 +722,20 @@ Transform:
   - {fileID: 1398298034}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &358507266
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 358507261}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9753ce65607ffd94593a947bc108409e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Health
+  maxHealth: 50
+  despawnDelay: 2
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -863,6 +875,7 @@ GameObject:
   - component: {fileID: 460499462}
   - component: {fileID: 460499461}
   - component: {fileID: 460499460}
+  - component: {fileID: 460499464}
   m_Layer: 0
   m_Name: Enemy (2)
   m_TagString: Untagged
@@ -912,17 +925,14 @@ MonoBehaviour:
   rushTimeout: 3
   recoverDuration: 1
   outerMargin: 2
-  zSpread: 1.5
-  holdSpacing: 1.5
+  receiveDuration: 0.7
   separationRadius: 1.2
   separationWeight: 1
-  holdLeashMin: 0.8
-  holdLeashMax: 2
-  reactionDelayMin: 0.15
-  reactionDelayMax: 0.5
-  fidgetIntervalMin: 2
-  fidgetIntervalMax: 5
-  fidgetDistance: 0.4
+  wanderRange: 4
+  wanderMoveMin: 0.8
+  wanderMoveMax: 2
+  wanderPauseMin: 0.3
+  wanderPauseMax: 1
 --- !u!114 &460499462
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -955,6 +965,20 @@ Transform:
   - {fileID: 177635586}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &460499464
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 460499459}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9753ce65607ffd94593a947bc108409e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Health
+  maxHealth: 50
+  despawnDelay: 2
 --- !u!1 &543917287
 GameObject:
   m_ObjectHideFlags: 0
@@ -1295,6 +1319,7 @@ GameObject:
   - component: {fileID: 894684097}
   - component: {fileID: 894684096}
   - component: {fileID: 894684095}
+  - component: {fileID: 894684099}
   m_Layer: 0
   m_Name: Enemy (1)
   m_TagString: Untagged
@@ -1344,17 +1369,14 @@ MonoBehaviour:
   rushTimeout: 3
   recoverDuration: 1
   outerMargin: 2
-  zSpread: 1.5
-  holdSpacing: 1.5
+  receiveDuration: 0.7
   separationRadius: 1.2
   separationWeight: 1
-  holdLeashMin: 0.8
-  holdLeashMax: 2
-  reactionDelayMin: 0.15
-  reactionDelayMax: 0.5
-  fidgetIntervalMin: 2
-  fidgetIntervalMax: 5
-  fidgetDistance: 0.4
+  wanderRange: 4
+  wanderMoveMin: 0.8
+  wanderMoveMax: 2
+  wanderPauseMin: 0.3
+  wanderPauseMax: 1
 --- !u!114 &894684097
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1387,6 +1409,20 @@ Transform:
   - {fileID: 543917288}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &894684099
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 894684094}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9753ce65607ffd94593a947bc108409e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Health
+  maxHealth: 50
+  despawnDelay: 2
 --- !u!1 &920056558
 GameObject:
   m_ObjectHideFlags: 0
@@ -1399,6 +1435,7 @@ GameObject:
   - component: {fileID: 920056559}
   - component: {fileID: 920056561}
   - component: {fileID: 920056562}
+  - component: {fileID: 920056563}
   m_Layer: 0
   m_Name: Enemy
   m_TagString: Untagged
@@ -1462,17 +1499,14 @@ MonoBehaviour:
   rushTimeout: 3
   recoverDuration: 1
   outerMargin: 2
-  zSpread: 1.5
-  holdSpacing: 1.5
+  receiveDuration: 0.7
   separationRadius: 1.2
   separationWeight: 1
-  holdLeashMin: 0.8
-  holdLeashMax: 2
-  reactionDelayMin: 0.15
-  reactionDelayMax: 0.5
-  fidgetIntervalMin: 2
-  fidgetIntervalMax: 5
-  fidgetDistance: 0.4
+  wanderRange: 4
+  wanderMoveMin: 0.8
+  wanderMoveMax: 2
+  wanderPauseMin: 0.3
+  wanderPauseMax: 1
 --- !u!114 &920056562
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1491,6 +1525,20 @@ MonoBehaviour:
   showStateLabel: 1
   labelHeight: 3
   labelFontSize: 15
+--- !u!114 &920056563
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 920056558}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9753ce65607ffd94593a947bc108409e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Health
+  maxHealth: 50
+  despawnDelay: 2
 --- !u!1 &1099171073
 GameObject:
   m_ObjectHideFlags: 0

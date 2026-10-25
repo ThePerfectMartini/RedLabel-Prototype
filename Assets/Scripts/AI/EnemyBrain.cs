@@ -381,6 +381,13 @@ public class EnemyBrain : MonoBehaviour
 
     void Update()
     {
+        // 죽었으면 판단을 멈춘다. 꺼지면 OnDisable이 쥐고 있던 공격권을 내놓는다.
+        if (state.IsDead)
+        {
+            enabled = false;
+            return;
+        }
+
         // 경직·띄워짐·쓰러짐 중엔 아무것도 하지 않는다. SetMoveInput을 부르면 넉백 속도가 지워진다.
         // CanAct를 쓰지 않는 이유: 공격 중에도 false라서, 그걸로 막으면 Attack 상태가 공격이 끝난 걸 보지 못한다.
         bool knockedDown = state.State == CharacterState.Airborne || state.IsDown;

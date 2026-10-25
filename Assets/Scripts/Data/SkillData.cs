@@ -79,7 +79,7 @@ public class SkillData : ScriptableObject
     public Vector3 attackBoxSize = new Vector3(1.5f, 1f, 1f);
 
     [Header("효과")]
-    [Tooltip("맞은 대상에게 주는 피해량. 아직 체력 시스템이 없어서 명중 로그에만 찍힌다.")]
+    [Tooltip("맞은 대상에게 주는 피해량. 대상에 Health가 없으면 체력이 깎이지 않고 명중 로그에만 찍힌다.")]
     public float damage = 10f;
 
     [Tooltip("맞은 대상이 굳어 있는 시간(초). 이 동안 이동·공격이 막힌다. " +

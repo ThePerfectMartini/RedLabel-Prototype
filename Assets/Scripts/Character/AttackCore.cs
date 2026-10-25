@@ -327,6 +327,9 @@ public class AttackCore : MonoBehaviour
             MovementCore targetMove = target.GetComponentInChildren<MovementCore>();
             StateMachine targetState = target.GetComponentInChildren<StateMachine>();
 
+            // 죽은 대상은 맞지 않는다. 명중으로도 치지 않는다.
+            if (targetState != null && targetState.IsDead) continue;
+
             // 이미 떠 있는 대상을 때렸거나 위로 띄웠는지. 맞은 쪽 StateMachine이 Airborne으로 갈지 정하는 데 쓴다.
             bool launched = false;
 
@@ -356,10 +359,16 @@ public class AttackCore : MonoBehaviour
             if (targetState != null)
                 targetState.TakeHit(currentSkill.hitStunDuration, launched);
 
+            // 피해. Health가 없는 캐릭터(지금은 플레이어)는 깎이지 않는다.
+            // TakeHit 뒤에 줘야 한다 — 죽으면 Die가 TakeHit이 정한 띄워짐 여부를 보고 바로 누울지 정한다.
+            Health targetHealth = target.GetComponentInChildren<Health>();
+            if (targetHealth != null)
+                targetHealth.TakeDamage(currentSkill.damage);
+
             count++;
 
-            // damage는 아직 아무도 소비하지 않는다. 체력 시스템이 생기기 전까지는 로그로만 확인한다.
-            Debug.Log($"[공격] {character.name} → {target.name} 명중 ({currentSkill.name}, 데미지 {currentSkill.damage})", target.gameObject);
+            string healthText = targetHealth != null ? $", 남은 체력 {targetHealth.Current}" : "";
+            Debug.Log($"[공격] {character.name} → {target.name} 명중 ({currentSkill.name}, 데미지 {currentSkill.damage}{healthText})", target.gameObject);
         }
 
         if (count == 0)
