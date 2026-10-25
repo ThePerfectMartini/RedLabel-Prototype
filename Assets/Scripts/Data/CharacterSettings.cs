@@ -29,6 +29,17 @@ public class CharacterSettings : ScriptableObject
              "날렵하고 가벼운 캐릭터는 0.7, 육중한 캐릭터는 1.5처럼 준다.")]
     public float weight = 1f;
 
+    [Header("튕김")]
+    [Tooltip("맞아서 떴다가 이 높이(m) 이상 떨어지면 바닥에서 다시 튕겨 오른다. 이보다 낮으면 바로 착지한다.")]
+    public float bounceMinHeight = 1.5f;
+
+    [Tooltip("무게 1 기준으로, 떨어진 높이 대비 튕겨 오르는 높이의 비율. 실제로는 무게로 나눠서 무거울수록 낮게 튄다. " +
+             "나눈 값이 0.9를 넘으면 0.9로 막는다 — 튕길 때마다 낮아져야 언젠가 멈추기 때문이다.")]
+    public float bounceRatio = 0.3f;
+
+    [Tooltip("튕길 때마다 수평 속도에 곱하는 값. 0.5면 한 번 튈 때마다 절반으로 느려지고, 0이면 제자리에서 위로만 튄다.")]
+    public float bounceHorizontalDamping = 0.5f;
+
     [Header("공격")]
     [Tooltip("X키로 나가는 기본 공격.")]
     [FormerlySerializedAs("attack1")]

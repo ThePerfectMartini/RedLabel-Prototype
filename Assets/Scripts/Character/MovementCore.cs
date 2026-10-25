@@ -26,6 +26,11 @@ public class MovementCore : MonoBehaviour
     /// <summary>시작할 때 바닥을 찾으려고 발밑으로 쏘는 레이의 최대 길이(m).</summary>
     const float GroundProbeDistance = 100f;
 
+    /// <summary>
+    /// 떨어진 높이 대비 튕겨 오르는 높이 비율의 상한. 1 이상이면 매번 같거나 더 높이 튀어 영영 멈추지 않는다.
+    /// </summary>
+    const float MaxBounceRatio = 0.9f;
+
     /// <summary>이 Core가 속한 캐릭터. 셋팅과 몸 transform을 여기서 받아간다.</summary>
     Character character;
 
@@ -61,6 +66,12 @@ public class MovementCore : MonoBehaviour
     /// 맞아서 뜬 경우엔 경직이 공중에서 풀려도 넉백 궤적을 끊지 못하게 하려는 것이다.
     /// </summary>
     bool airControl;
+
+    /// <summary>
+    /// 이번 공중 체류에서 가장 높이 올라간 피벗 높이. 착지할 때 '떨어진 높이'를 재서 튕길지 정하는 데 쓴다.
+    /// Launch가 뜨는 순간의 높이로 채우고, 공중에 있는 동안 계속 갱신한다. 튕기면 바닥 높이로 다시 채운다.
+    /// </summary>
+    float peakY;
 
     /// <summary>
     /// 바닥에 서 있을 때의 피벗 높이. Awake에서 발밑으로 레이를 한 번 쏴 정하고 그대로 고정된다.
@@ -159,6 +170,7 @@ public class MovementCore : MonoBehaviour
         // 바닥보다 위에 떠 있으면 공중에서 시작한다. Update의 중력이 알아서 떨어뜨린다.
         // 바닥에 딱 붙여 놓았으면 등호가 성립해 true가 되므로 종전과 동작이 같다.
         isGrounded = body.position.y <= groundY;
+        peakY = body.position.y;
 
         // 매 프레임 찾으면 낭비라 여기서 한 번만 찾아둔다.
         // 값(Bounds)이 아니라 참조만 잡아두므로 MapBounds.Awake가 나중에 돌아도 문제없다.
@@ -271,6 +283,9 @@ public class MovementCore : MonoBehaviour
 
         isGrounded = false;
 
+        // 공중에서 또 맞아도(저글링) 거기서부터 새로 잰다. 그 뒤 더 올라가면 Update가 갱신한다.
+        peakY = body.position.y;
+
         // 준비 동작은 '땅에 서서' 하는 것이다. 이륙이든 피격이든 밀려나는 순간 끝난다.
         jumpReady = false;
 
@@ -352,8 +367,30 @@ public class MovementCore : MonoBehaviour
         //    준비는 지상에서만 켜지고 지상에선 velocity.y가 0이라, 위치를 통째로 멈춰도 된다.
         Vector3 pos = jumpReady ? body.position : body.position + velocity * dt;
 
+        if (!isGrounded && pos.y > peakY)
+            peakY = pos.y;
+
         // 4) 착지 — 3)에서 바닥을 뚫었으면 되돌린다.
-        if (pos.y <= groundY)
+        //    맞아서 뜬 경우(공중 조작이 없는 경우)엔 충분히 높이서 떨어졌으면 착지 대신 다시 튕겨 오른다.
+        //    점프로 뜬 경우는 튕기지 않는다.
+        float fallHeight = peakY - groundY;
+        if (pos.y <= groundY && !isGrounded && !airControl && fallHeight >= settings.bounceMinHeight)
+        {
+            pos.y = groundY;
+
+            // 튕겨 오를 높이를 정하고, 그 높이에 닿는 속도로 바꾼다(v = √(2gh)).
+            // 중력에 무게가 곱해지므로 g에도 무게를 곱해야 정한 높이만큼 정확히 뜬다.
+            float ratio = Mathf.Min(settings.bounceRatio / settings.weight, MaxBounceRatio);
+            float bounceHeight = fallHeight * ratio;
+            velocity.y = Mathf.Sqrt(2f * BaseGravity * settings.weight * bounceHeight);
+
+            velocity.x *= settings.bounceHorizontalDamping;
+            velocity.z *= settings.bounceHorizontalDamping;
+
+            // 다음 착지 때 이번 튕김의 높이로 다시 재도록 바닥에서부터 센다.
+            peakY = groundY;
+        }
+        else if (pos.y <= groundY)
         {
             pos.y = groundY;
             velocity.y = 0f;
