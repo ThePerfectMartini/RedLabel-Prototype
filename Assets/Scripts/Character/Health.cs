@@ -29,6 +29,15 @@ public class Health : MonoBehaviour
     /// <summary>남은 체력. 명중 로그에 찍는다.</summary>
     public float Current => current;
 
+    /// <summary>최대 체력. 체력 바가 비율을 계산하는 데 쓴다.</summary>
+    public float Max => maxHealth;
+
+    /// <summary>
+    /// 피해를 입었을 때 피해량과 함께 불린다. 죽인 타격에서도 불린다.
+    /// 슈퍼아머 중엔 TakeHit이 불리지 않아서, 보스(BossBrain)는 이걸로 맞은 걸 안다.
+    /// </summary>
+    public event System.Action<float> Damaged;
+
     void Awake()
     {
         current = maxHealth;
@@ -56,6 +65,8 @@ public class Health : MonoBehaviour
             current = 0f;
             stateMachine.Die();
         }
+
+        Damaged?.Invoke(amount);
     }
 
     void Update()

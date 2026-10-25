@@ -330,10 +330,13 @@ public class AttackCore : MonoBehaviour
             // 죽은 대상은 맞지 않는다. 명중으로도 치지 않는다.
             if (targetState != null && targetState.IsDead) continue;
 
+            // 슈퍼아머면 밀지도 굳히지도 않는다. 피해만 주고 명중으로는 친다 — TakeHit을 건너뛰니 하던 공격도 끊기지 않는다.
+            bool superArmor = targetState != null && targetState.HasSuperArmor;
+
             // 이미 떠 있는 대상을 때렸거나 위로 띄웠는지. 맞은 쪽 StateMachine이 Airborne으로 갈지 정하는 데 쓴다.
             bool launched = false;
 
-            if (targetMove != null)
+            if (targetMove != null && !superArmor)
             {
                 bool targetAirborne = !targetMove.IsGrounded;
                 bool targetDown = !targetAirborne && targetState != null && targetState.IsDown;
@@ -356,7 +359,7 @@ public class AttackCore : MonoBehaviour
             }
 
             // 경직. 이 시간 동안 대상은 Hit 상태가 되어 이동·공격 입력이 막힌다. 띄웠으면 착지할 때까지 Airborne이다.
-            if (targetState != null)
+            if (targetState != null && !superArmor)
                 targetState.TakeHit(currentSkill.hitStunDuration, launched);
 
             // 피해. Health가 없는 캐릭터(지금은 플레이어)는 깎이지 않는다.

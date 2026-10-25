@@ -14,6 +14,7 @@ public enum CharacterState
     AirborneLanded,
     LieDown,
     GetUp,
+    Groggy,
 }
 
 /// <summary>
@@ -23,7 +24,10 @@ public enum CharacterState
 /// 갖고 있는 사실(지상인지, 공격 중인지)이라, 복사해 두면 둘이 어긋날 수 있기 때문이다.
 /// 스스로 들고 있는 건 경직 타이머 하나뿐이다.
 ///
-/// 우선순위: 띄워짐 > 쓰러짐 > 피격 > 공격 > 점프 준비 > 공중 > 달리기·이동 > 대기
+/// 우선순위: 띄워짐 > 쓰러짐 > 피격 > 그로기 > 공격 > 점프 준비 > 공중 > 달리기·이동 > 대기
+///
+/// 그로기(Groggy)는 BossBrain이 IsGroggy로 켜고 끈다. 그로기 중에 맞으면 피격·띄워짐·쓰러짐이 먼저 나오고,
+/// 그게 다 끝났는데 그로기가 남아 있으면 Groggy 클립으로 돌아간다.
 ///
 /// 띄워짐(Airborne)은 경직 시간과 무관하게 착지할 때까지 간다.
 /// 띄워진 채로 또 맞으면 피격 클립을 한 번 틀고 띄워짐 클립으로 돌아간다(상태는 계속 Airborne).
@@ -52,7 +56,7 @@ public class StateMachine : MonoBehaviour
     ///
     /// Attack 칸은 스킬이 이름을 정하지 못했을 때의 대비책일 뿐이다 — 보통은 SkillData가 정한다.
     /// </summary>
-    static readonly string[] StateNames = { "Idle", "Move", "Attack", "Hit", "Run", "JumpReady", "JumpAir", "Airborne", "Airborne Landed", "Lie Down", "Get Up" };
+    static readonly string[] StateNames = { "Idle", "Move", "Attack", "Hit", "Run", "JumpReady", "JumpAir", "Airborne", "Airborne Landed", "Lie Down", "Get Up", "Groggy" };
 
     /// <summary>공중 피격 클립이 끝났는지 볼 때 쓰는 Hit 상태의 해시. 매 프레임 문자열을 해시하지 않으려고 미리 구해둔다.</summary>
     static readonly int HitStateHash = Animator.StringToHash(StateNames[(int)CharacterState.Hit]);
@@ -116,6 +120,15 @@ public class StateMachine : MonoBehaviour
 
     /// <summary>죽었는지. 죽으면 누운 채로 일어서지 않고, 더는 공격을 맞지 않는다.</summary>
     public bool IsDead => dead;
+
+    /// <summary>
+    /// 슈퍼아머인지. 켜져 있으면 AttackCore가 넉백·경직을 건너뛰고 피해만 준다 — 하던 공격도 끊기지 않는다.
+    /// BossBrain이 켜고, 그로기 동안만 끈다.
+    /// </summary>
+    public bool HasSuperArmor { get; set; }
+
+    /// <summary>그로기 중인지. BossBrain이 켜고 끈다. 켜져 있으면 맞는 중이 아닐 때 Groggy 클립을 튼다.</summary>
+    public bool IsGroggy { get; set; }
 
     /// <summary>착지 후 쓰러져 있는 중인지(착지·누움·일어서기). 이동·공격 입력을 막는 데 쓴다.</summary>
     public bool IsDown => state == CharacterState.AirborneLanded
@@ -267,6 +280,7 @@ public class StateMachine : MonoBehaviour
         }
 
         if (hitTimer > 0f) return CharacterState.Hit;
+        if (IsGroggy) return CharacterState.Groggy;
         if (attack.IsAttacking) return CharacterState.Attack;
 
         // 준비 클립의 마지막 프레임 이벤트가 이륙시키면, 다음 판정에서 공중이 되어 체공 클립으로 넘어간다.
