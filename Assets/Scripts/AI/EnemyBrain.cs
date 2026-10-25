@@ -9,11 +9,11 @@ using UnityEngine.Serialization;
 ///
 /// 상태:
 ///   Idle     — 플레이어가 감지 거리 안에 들어올 때까지 서 있는다. 한 번 감지하면 다시 돌아오지 않는다.
-///   Hold     — 공격권이 없는 적. 바깥 링(대기 거리 + outerMargin, 라인을 zSpread만큼 위나 아래로 비낌)에서
-///              따라다니며 순서를 기다린다. 같은 쪽 Hold 적끼리는 플레이어에 가까운 순으로 자리를 나눠 선다
-///              (두 마리씩 위아래, 그 뒤로는 holdSpacing만큼 바깥 줄). 내가 선 쪽(플레이어 기준 좌/우)의 공격권이 비면,
-///              그쪽에서 Hold 중인 적 가운데 가장 가까운 적이 가져간다.
-///              자리는 느슨하게 쫓는다 — 적마다 다른 불감대·반응 시간이 있고, 서 있는 동안 가끔 반 걸음 옮긴다.
+///   Hold     — 공격권이 없는 적. 플레이어의 정확한 위치를 쫓지 않고, 플레이어를 바라본 채 자기 기준으로
+///              배회한다 — 위·아래·좌·우 중 한 방향으로 잠깐 천천히 걷고, 잠깐 멈추기를 되풀이한다.
+///              플레이어와의 X 거리는 한 동작이 끝날 때만 본다. 너무 가까우면(대기 거리 + outerMargin 안쪽) 다음 동작은
+///              물러나기, 너무 멀면(거기서 wanderRange 바깥) 다음 동작은 다가가기다. 동작 도중엔 거리를 보지 않는다.
+///   Receive  — 공격권을 막 넘겨받았다. receiveDuration 동안 제자리에서 플레이어를 노려본 뒤 Approach로.
 ///   Approach — 공격권 쪽(좌/우)의 '대기 위치'(같은 라인, 사거리보다 standoffMargin만큼 바깥)로 간다.
 ///              보통 속도로 가고 멀면 달린다. 교전 범위는 보지 않는다.
 ///              대기 위치에서 engageEnterRadius 안에 들어오면 Engage로.
@@ -34,6 +34,8 @@ using UnityEngine.Serialization;
 /// 공격권을 가진 적만 Approach~Attack을 돌고, 자리도 공격권 쪽에 잡는다.
 /// 공격권은 공격할 때마다 돌아가며 넘어가지 않는다. 쥔 적이 띄워지거나 쓰러졌을 때, 또는 숨 고르는 사이
 /// 대기하던 적이 더 가까워졌을 때만 넘어간다 — 기회가 생긴 적이 들어오는 것처럼 보이게.
+/// 넘길 때는 쥔 적이 받을 적을 고른다(그쪽 Hold 적 가운데 플레이어에 가장 가까운 적). 받은 적은 Receive로
+/// 잠시 노려본 뒤에야 들어온다. 공격권이 비어 있으면(처음 감지했을 때 등) 같은 기준으로 고른 적이 받는다.
 /// 공격권 쪽 자리가 맵 밖이면(플레이어가 벽에 붙으면) 그 공격권은 아무도 쓸 수 없다.
 /// 공격권은 별도 매니저 없이 이 클래스의 static으로 관리한다(적이 1종이라 따로 뺄 이유가 아직 없다).
 /// 캐릭터끼리 몸 충돌이 없어서, 움직일 때는 가까운 적에게서 멀어지는 방향을 더해 서로 비켜 간다(separationRadius).
@@ -45,8 +47,8 @@ using UnityEngine.Serialization;
 /// 맞는 중(경직·띄워짐·쓰러짐)엔 판단을 멈춘다. 단순 경직은 공격권을 지키고, 띄워지거나 쓰러지면 내놓는다.
 /// 풀리면 공격권이 있으면 Approach, 없으면 Hold부터 다시 한다. 감지 전에 맞아도 쫓아온다.
 ///
-/// 판단에는 랜덤 요소가 없다. 같은 상황이면 같은 행동을 한다. 예외는 Hold 대기 적의 버릇뿐이다 —
-/// 불감대·반응 시간은 Awake에서 적마다 한 번 정하고, 잔동작의 간격·방향은 매번 정한다.
+/// 판단에는 랜덤 요소가 없다. 같은 상황이면 같은 행동을 한다. 예외는 Hold 배회뿐이다 —
+/// 이동 방향·이동 시간·멈춤 시간은 동작마다 새로 정한다.
 /// 판단 과정을 눈으로 보려면 같은 오브젝트에 EnemyBrainGizmo를 붙인다.
 ///
 /// [준비물] 이 오브젝트 또는 그 자식에 MovementCore + AttackCore + StateMachine, 계층 위쪽에 Character.
@@ -59,27 +61,12 @@ public class EnemyBrain : MonoBehaviour
     {
         Idle,
         Hold,
+        Receive,
         Approach,
         Engage,
         Rush,
         Attack,
         Recover,
-    }
-
-    /// <summary>Hold 안에서의 세부 움직임. 대기 적들이 플레이어에 맞춰 일제히 움직이지 않게 나눠둔다.</summary>
-    public enum HoldPhase
-    {
-        /// <summary>자리에 서 있다. 잔동작 간격을 센다.</summary>
-        Settled,
-
-        /// <summary>자리가 불감대 밖으로 벗어난 걸 알아챘다. 반응 시간이 지나면 움직인다.</summary>
-        Reacting,
-
-        /// <summary>자리로 걸어가는 중. 도착하면 Settled.</summary>
-        Moving,
-
-        /// <summary>자리 근처의 작은 지점으로 반 걸음 옮기는 중. 도착하면 Settled.</summary>
-        Fidget,
     }
 
     /// <summary>목표 지점에 이만큼 가까우면 도착한 것으로 보고 멈춘다(m). 달리기 한 프레임 이동량보다 커야 지나치지 않는다.</summary>
@@ -90,6 +77,12 @@ public class EnemyBrain : MonoBehaviour
     /// 그 사이 플레이어가 조금만 물러나도 헛치기 때문에 안쪽으로 당긴다.
     /// </summary>
     const float StandDistanceRatio = 0.7f;
+
+    /// <summary>Hold 배회 중 맵 끝이 이 거리(m)보다 가까운 방향으로는 걷지 않는다. 걷던 중이면 그 동작을 끝낸다.</summary>
+    const float WanderEdgeMargin = 1f;
+
+    /// <summary>Hold 배회의 이동 방향 후보. x는 월드 X(좌우), y는 월드 Z(위아래)다.</summary>
+    static readonly Vector2[] WanderDirections = { Vector2.right, Vector2.left, Vector2.up, Vector2.down };
 
     /// <summary>켜져 있는 모든 적. Hold 중 '내가 가장 가까운가'를 가리는 데 쓴다.</summary>
     static readonly List<EnemyBrain> active = new List<EnemyBrain>();
@@ -128,7 +121,7 @@ public class EnemyBrain : MonoBehaviour
     [SerializeField] private float standoffMargin = 1.5f;
 
     [Tooltip("Approach 중 대기 위치까지 이 거리(m) 안에 들어오면 Engage로 넘어간다. " +
-             "남은 거리는 Engage의 느린 속도로 마저 좁힌다. Hold에서도 이 안에 들어오면 느리게 걷는다.")]
+             "남은 거리는 Engage의 느린 속도로 마저 좁힌다.")]
     [Min(ArriveRadius)]
     [SerializeField] private float engageEnterRadius = 1f;
 
@@ -141,7 +134,7 @@ public class EnemyBrain : MonoBehaviour
     [FormerlySerializedAs("readyDuration")]
     [SerializeField] private float engageDuration = 0.4f;
 
-    [Tooltip("Engage·Hold 중 따라다닐 때의 속도 배율. 1이면 보통 걷기, 0.5면 절반 속도.")]
+    [Tooltip("Engage 중 따라다닐 때와 Hold 중 배회할 때의 속도 배율. 1이면 보통 걷기, 0.5면 절반 속도.")]
     [Range(0f, 1f)]
     [SerializeField] private float stalkSpeedRatio = 0.5f;
 
@@ -152,15 +145,13 @@ public class EnemyBrain : MonoBehaviour
     [SerializeField] private float recoverDuration = 0.8f;
 
     [Header("협공")]
-    [Tooltip("공격권이 없는 적(Hold)이 대기 위치보다 얼마나 더 바깥에 서는지(m).")]
+    [Tooltip("공격권이 없는 적(Hold)이 한 동작을 마쳤을 때 플레이어와의 X 거리가 '대기 거리 + 이 값'보다 가까우면 " +
+             "다음 동작에서 물러난다(m).")]
     [SerializeField] private float outerMargin = 2f;
 
-    [Tooltip("공격권이 없는 적(Hold)이 플레이어 라인에서 위나 아래로 비껴 서는 거리(m). 순번이 짝수면 아래, 홀수면 위.")]
-    [SerializeField] private float zSpread = 1.5f;
-
-    [Tooltip("같은 쪽 Hold 적이 셋 이상일 때, 두 마리마다 이만큼(m) 더 바깥 줄에 선다.")]
+    [Tooltip("공격권을 넘겨받은 적이 들어오기 전에 제자리에서 노려보는 시간(초).")]
     [Min(0f)]
-    [SerializeField] private float holdSpacing = 1.5f;
+    [SerializeField] private float receiveDuration = 0.7f;
 
     [Tooltip("다른 적과 이 거리(m) 안이면 이동 중에 서로 멀어지려 한다. 캐릭터끼리 몸 충돌이 없어서 이게 없으면 겹친다. " +
              "서 있을 때는 이 거리의 절반 안으로 들어왔을 때만 비켜선다.")]
@@ -171,32 +162,25 @@ public class EnemyBrain : MonoBehaviour
     [Min(0f)]
     [SerializeField] private float separationWeight = 1f;
 
-    [Header("Hold 움직임")]
-    [Tooltip("불감대 최솟값(m). 대기 자리가 지금 위치에서 불감대보다 멀어져야 따라 움직인다. " +
-             "적마다 최솟값~최댓값 사이에서 한 번 정해서, 플레이어가 움직여도 대기 적들이 일제히 따라오지 않는다.")]
-    [Min(0.01f)]
-    [SerializeField] private float holdLeashMin = 0.8f;
-
-    [Tooltip("불감대 최댓값(m).")]
-    [SerializeField] private float holdLeashMax = 2f;
-
-    [Tooltip("반응 시간 최솟값(초). 대기 자리가 불감대를 벗어난 걸 알아챈 뒤 이만큼 있다가 출발한다. 적마다 한 번 정한다.")]
+    [Header("Hold 배회")]
+    [Tooltip("배회해도 되는 X 거리의 폭(m). 한 동작을 마쳤을 때 플레이어와의 X 거리가 " +
+             "'대기 거리 + outerMargin + 이 값'보다 멀면 다음 동작에서 다가간다.")]
     [Min(0f)]
-    [SerializeField] private float reactionDelayMin = 0.15f;
+    [SerializeField] private float wanderRange = 4f;
 
-    [Tooltip("반응 시간 최댓값(초).")]
-    [SerializeField] private float reactionDelayMax = 0.5f;
-
-    [Tooltip("잔동작 간격 최솟값(초). 자리에 서 있으면 이 간격마다 반 걸음씩 옮긴다. 간격은 매번 새로 정한다.")]
+    [Tooltip("한 방향으로 걷는 시간 최솟값(초). 동작마다 최솟값~최댓값 사이에서 새로 정한다.")]
     [Min(0.1f)]
-    [SerializeField] private float fidgetIntervalMin = 2f;
+    [SerializeField] private float wanderMoveMin = 0.8f;
 
-    [Tooltip("잔동작 간격 최댓값(초).")]
-    [SerializeField] private float fidgetIntervalMax = 5f;
+    [Tooltip("한 방향으로 걷는 시간 최댓값(초).")]
+    [SerializeField] private float wanderMoveMax = 2f;
 
-    [Tooltip("잔동작으로 자리에서 옮기는 최대 거리(m). 잔동작 때문에 추적이 시작되지 않도록 불감대 최솟값의 80%를 넘지 못한다.")]
+    [Tooltip("걷고 나서 멈춰 있는 시간 최솟값(초). 동작마다 최솟값~최댓값 사이에서 새로 정한다.")]
     [Min(0f)]
-    [SerializeField] private float fidgetDistance = 0.4f;
+    [SerializeField] private float wanderPauseMin = 0.3f;
+
+    [Tooltip("멈춰 있는 시간 최댓값(초).")]
+    [SerializeField] private float wanderPauseMax = 1f;
 
     MovementCore movement;
     AttackCore attack;
@@ -228,29 +212,21 @@ public class EnemyBrain : MonoBehaviour
     /// <summary>Engage 중 플레이어의 공격을 보고 기다리는 중인지. 그 공격이 끝나는 순간 돌진한다.</summary>
     bool waitingForOpening;
 
-    // ── Hold 움직임
+    // ── Hold 배회
 
-    HoldPhase holdPhase = HoldPhase.Settled;
+    /// <summary>멈춰 있는 중인지. 아니면 걷는 중이다.</summary>
+    bool wanderPaused = true;
 
-    /// <summary>이 적의 불감대(m). Awake에서 한 번 정하고 바뀌지 않는다.</summary>
-    float holdLeash;
+    /// <summary>지금 걷는 방향(WanderDirections 중 하나). 갈 수 있는 방향이 없으면 zero다.</summary>
+    Vector2 wanderDir;
 
-    /// <summary>이 적의 반응 시간(초). Awake에서 한 번 정하고 바뀌지 않는다.</summary>
-    float reactionDelay;
+    /// <summary>너무 멀어서 플레이어 쪽으로 따라가는 중인지. 이땐 시간이 아니라 도착으로 동작이 끝난다.</summary>
+    bool wanderCatchingUp;
 
-    /// <summary>Reacting에서 출발까지 남은 시간.</summary>
-    float reactionTimer;
+    /// <summary>지금 동작(걷기 또는 멈춤)의 남은 시간.</summary>
+    float wanderTimer;
 
-    /// <summary>Settled에서 다음 잔동작까지 남은 시간.</summary>
-    float fidgetTimer;
-
-    /// <summary>지금 서 있으려는 지점이 대기 자리에서 얼마나 비껴 있는지. 잔동작이 바꾸고, 자리로 이동할 때 0이 된다.</summary>
-    Vector3 fidgetOffset;
-
-    /// <summary>마지막으로 계산한 대기 자리. 불감대는 이 점을 기준으로 잰다.</summary>
-    Vector3 holdSlot;
-
-    /// <summary>Rush·Recover에서 남은 시간. 두 상태가 겹칠 일이 없어 하나로 같이 쓴다.</summary>
+    /// <summary>Rush·Recover·Receive에서 남은 시간. 세 상태가 겹칠 일이 없어 하나로 같이 쓴다.</summary>
     float stateTimer;
 
     /// <summary>마지막으로 향한 목표 지점(바깥 대기 위치, 대기 위치 또는 공격 위치).</summary>
@@ -275,25 +251,31 @@ public class EnemyBrain : MonoBehaviour
     /// <summary>Engage 중 플레이어가 공격하는 걸 보고 빈틈을 기다리는 중인지.</summary>
     public bool IsWaitingForOpening => waitingForOpening;
 
-    /// <summary>Hold 안에서의 세부 움직임.</summary>
-    public HoldPhase CurrentHoldPhase => holdPhase;
+    /// <summary>Hold 배회 중 멈춰 있는지.</summary>
+    public bool IsWanderPaused => wanderPaused;
 
-    /// <summary>이 적의 불감대(m).</summary>
-    public float HoldLeash => holdLeash;
+    /// <summary>Hold 배회 중 걷는 방향. x는 월드 X, y는 월드 Z.</summary>
+    public Vector2 WanderDirection => wanderDir;
 
-    /// <summary>이 적의 반응 시간(초).</summary>
-    public float ReactionDelay => reactionDelay;
+    /// <summary>Hold 배회 중 너무 멀어서 플레이어 쪽으로 따라가는 중인지.</summary>
+    public bool IsWanderCatchingUp => wanderCatchingUp;
 
-    /// <summary>Reacting에서 출발까지 남은 시간.</summary>
-    public float ReactionTimer => reactionTimer;
+    /// <summary>Hold 배회의 지금 동작(걷기 또는 멈춤)의 남은 시간.</summary>
+    public float WanderTimer => wanderTimer;
 
-    /// <summary>마지막으로 계산한 대기 자리. 불감대 원의 중심이다.</summary>
-    public Vector3 HoldSlot => holdSlot;
+    /// <summary>Hold 적이 동작을 마쳤을 때 플레이어와의 X 거리가 이보다 가까우면 물러난다.</summary>
+    public float WanderMinDistance => StandoffDistance + outerMargin;
+
+    /// <summary>Hold 적이 동작을 마쳤을 때 플레이어와의 X 거리가 이보다 멀면 다가간다.</summary>
+    public float WanderMaxDistance => WanderMinDistance + wanderRange;
+
+    /// <summary>노리는 대상의 위치. Awake를 통과해 판단을 돌고 있을 때만(State가 Idle이 아닐 때) 읽는다.</summary>
+    public Vector3 TargetPosition => target.transform.position;
 
     /// <summary>이동 중 밀어내기 거리. 서 있을 때는 이 절반이 기준이다.</summary>
     public float SeparationRadius => separationRadius;
 
-    /// <summary>Rush·Recover에서 남은 시간.</summary>
+    /// <summary>Rush·Recover·Receive에서 남은 시간.</summary>
     public float StateTimer => stateTimer;
 
     /// <summary>지금 휘두르고 있는 콤보 단계의 스킬. Awake 전이면 null.</summary>
@@ -382,11 +364,6 @@ public class EnemyBrain : MonoBehaviour
             Debug.LogWarning($"{name}: target 아래에서 StateMachine을 찾지 못해 '플레이어가 누워 있으면 Engage 멈춤'을 건너뜁니다.", this);
 
         map = MapBounds.Instance;
-
-        // 대기 적의 성격. 한 번만 정해서, 각 적은 끝까지 같은 버릇으로 움직인다.
-        holdLeash = Random.Range(holdLeashMin, holdLeashMax);
-        reactionDelay = Random.Range(reactionDelayMin, reactionDelayMax);
-        fidgetTimer = Random.Range(fidgetIntervalMin, fidgetIntervalMax);
     }
 
     // Awake에서 스스로 꺼졌으면(준비물 누락) OnEnable이 불리지 않아 목록에 들어가지 않는다.
@@ -410,13 +387,14 @@ public class EnemyBrain : MonoBehaviour
         stunned = knockedDown || state.State == CharacterState.Hit;
         if (stunned)
         {
-            // 단순 경직으로는 자리를 뺏기지 않는다. 띄워지거나 쓰러지면 대기하던 적이 들어오도록 내놓는다.
+            // 단순 경직으로는 자리를 뺏기지 않는다. 띄워지거나 쓰러지면 대기하던 적에게 넘긴다.
             if (knockedDown)
-                ReleaseToken();
+                PassToken();
 
             // 풀린 뒤엔 무슨 상태였든 다시 자리를 잡는다 — 하던 공격은 TakeHit이 이미 끊었고, 자리도 밀려났다.
-            // 공격권이 없으면 Hold부터 — 내 쪽 공격권이 아직 비어 있고 내가 가장 가까우면 곧바로 되찾는다.
-            aiState = tokenSide != 0 ? AIState.Approach : AIState.Hold;
+            // 공격권이 없으면 Hold부터 — 내 쪽 공격권이 아직 비어 있고 내가 가장 가까우면 다시 받는다.
+            if (tokenSide != 0) aiState = AIState.Approach;
+            else EnterHold();
             return;
         }
 
@@ -424,11 +402,21 @@ public class EnemyBrain : MonoBehaviour
         {
             case AIState.Idle:
                 if (FlatDistance(body.position, target.transform.position) <= detectRange)
-                    aiState = AIState.Hold;   // 빈 공격권이 있으면 Hold가 바로 가져간다
+                    EnterHold();   // 빈 공격권이 있으면 Hold가 바로 받는다
                 break;
 
             case AIState.Hold:
                 Hold();
+                break;
+
+            case AIState.Receive:
+                if (LoseTokenIfSideBlocked()) break;
+
+                // 넘겨받자마자 덤비지 않는다. 노려보는 박자를 둬서 '이제 내 차례'인 게 보이게 한다.
+                StandStill();
+                stateTimer -= Time.deltaTime;
+                if (stateTimer <= 0f)
+                    aiState = AIState.Approach;
                 break;
 
             case AIState.Approach:
@@ -476,107 +464,132 @@ public class EnemyBrain : MonoBehaviour
                 StandStill();
 
                 // 숨 고르는 사이 같은 쪽 대기 적이 나보다 플레이어에 가까워지면(플레이어가 피하며 그쪽으로 갔다든지)
-                // 공격권을 내놓는다. 그 적이 다음 프레임 Hold에서 가져간다.
+                // 공격권을 그쪽 대기 적에게 넘긴다.
                 if (tokenSide != 0 && WaitingEnemyCloser())
-                    ReleaseToken();
+                    PassToken();
 
                 stateTimer -= Time.deltaTime;
                 if (stateTimer <= 0f)
                 {
                     // 아직 쥐고 있으면 다시 들어가 또 친다. 넘겼으면 바깥으로 빠진다.
-                    aiState = tokenSide != 0 ? AIState.Approach : AIState.Hold;
+                    if (tokenSide != 0) aiState = AIState.Approach;
+                    else EnterHold();
                 }
                 break;
         }
     }
 
+    /// <summary>Hold로 들어간다. 하던 배회는 버리고, 다음 프레임에 지금 거리를 보고 새 동작을 고른다.</summary>
+    void EnterHold()
+    {
+        aiState = AIState.Hold;
+        wanderPaused = true;
+        wanderTimer = 0f;
+    }
+
     /// <summary>
-    /// 공격권 없이 바깥 링에서 순서를 기다린다. 공격권을 얻으면 곧바로 Approach로 넘어간다.
+    /// 공격권 없이 배회하며 순서를 기다린다. 내 쪽 공격권이 비어 있으면 그쪽 대기 적 가운데
+    /// 가장 가까운 적이 받는다(나일 수도 있다).
     ///
-    /// 대기 자리를 매 프레임 쫓으면 플레이어가 한 걸음만 움직여도 대기 적 전원이 같은 순간 출발·정지해서
-    /// 줄 맞춰 끌려다니는 것처럼 보인다. 그래서:
-    ///   불감대 — 자리가 이 적의 holdLeash보다 멀어져야 움직인다.
-    ///   반응   — 벗어난 걸 알아챈 뒤 이 적의 reactionDelay만큼 있다가 출발한다. 그 사이 돌아오면 취소.
-    ///   이동   — 일단 출발하면 자리까지 간다. 멀면 보통 속도(멀면 달리기), 가까우면 느리게.
-    ///   잔동작 — 서 있는 동안 가끔 자리 근처로 반 걸음 옮긴다.
+    /// 플레이어의 정확한 위치를 쫓지 않는다. 걷기와 멈춤을 번갈아 하고, 걷는 방향은 내 기준(위·아래·좌·우)이다.
+    /// 플레이어와의 거리는 동작이 끝나 다음 걷기를 고를 때만 본다(StartWanderMove).
+    /// 너무 멀어서 따라가는 걷기만 시간 대신 도착으로 끝난다 — 도망치는 플레이어를 놓치지 않게.
     /// </summary>
     void Hold()
     {
-        if (TryClaimAsClosest())
+        int mySide = SideOf(body.position);
+        if (Holder(mySide) == null)
         {
-            aiState = AIState.Approach;
-            return;
+            GiveToken(mySide);
+            if (aiState != AIState.Hold) return;   // 내가 받았다
         }
 
-        holdSlot = HoldPosition();
-        float offSlot = FlatDistance(body.position, holdSlot);
-
-        switch (holdPhase)
+        if (wanderPaused)
         {
-            case HoldPhase.Settled:
-            case HoldPhase.Fidget:
-                if (offSlot > holdLeash)
-                {
-                    holdPhase = HoldPhase.Reacting;
-                    reactionTimer = reactionDelay;
-                }
-                else if (holdPhase == HoldPhase.Settled)
-                {
-                    fidgetTimer -= Time.deltaTime;
-                    if (fidgetTimer <= 0f)
-                        StartFidget();
-                }
-                break;
-
-            case HoldPhase.Reacting:
-                if (offSlot <= holdLeash)
-                {
-                    holdPhase = HoldPhase.Settled;   // 플레이어가 잠깐 움직였다 돌아왔다. 출발 취소.
-                    break;
-                }
-
-                reactionTimer -= Time.deltaTime;
-                if (reactionTimer <= 0f)
-                {
-                    holdPhase = HoldPhase.Moving;
-                    fidgetOffset = Vector3.zero;   // 새 자리로 갈 땐 잔동작으로 비낀 걸 버린다
-                }
-                break;
-        }
-
-        switch (holdPhase)
-        {
-            case HoldPhase.Moving:
-                bool near = offSlot <= engageEnterRadius;
-                if (MoveTo(holdSlot, near ? stalkSpeedRatio : 1f, near ? float.PositiveInfinity : runDistance))
-                    holdPhase = HoldPhase.Settled;
-                break;
-
-            case HoldPhase.Fidget:
-                if (MoveTo(holdSlot + fidgetOffset, stalkSpeedRatio, float.PositiveInfinity))
-                    holdPhase = HoldPhase.Settled;
-                break;
-
-            default:
-                // Settled·Reacting: 제자리에 서서 플레이어를 바라본다. 목표 지점은 표시용으로만 갱신한다.
-                goal = holdSlot + fidgetOffset;
+            wanderTimer -= Time.deltaTime;
+            if (wanderTimer > 0f)
+            {
+                goal = body.position;
                 StandStill();
-                break;
+                return;
+            }
+
+            StartWanderMove();
+        }
+
+        bool done;
+        if (wanderCatchingUp)
+        {
+            // 따라붙을 지점은 플레이어 X에 맞춰 매 프레임 옮긴다. 라인(Z)은 지금 그대로 둔다.
+            float x = target.transform.position.x + mySide * WanderMaxDistance;
+            done = MoveTo(new Vector3(x, body.position.y, body.position.z), 1f, runDistance);
+        }
+        else
+        {
+            wanderTimer -= Time.deltaTime;
+            done = wanderTimer <= 0f || wanderDir == Vector2.zero || WanderBlocked(wanderDir);
+
+            // 방향만 정해서 걷는다. 목표를 1m 앞에 두면 도착하지 않고 그 방향으로 계속 간다.
+            if (!done)
+                MoveTo(body.position + new Vector3(wanderDir.x, 0f, wanderDir.y), stalkSpeedRatio, float.PositiveInfinity);
+        }
+
+        if (done)
+        {
+            wanderPaused = true;
+            wanderTimer = Random.Range(wanderPauseMin, wanderPauseMax);
+            goal = body.position;
+            StandStill();
         }
     }
 
     /// <summary>
-    /// 자리 근처의 새 지점을 골라 반 걸음 옮기기 시작한다. 다음 잔동작까지의 간격도 새로 정한다.
-    /// 옮기는 거리는 불감대 최솟값의 80%로 묶는다 — 잔동작이 불감대를 넘으면 그 자체로 추적이 시작된다.
+    /// 다음 걷기를 고른다. 플레이어와의 X 거리만 본다:
+    ///   너무 가까우면(WanderMinDistance 안쪽) 플레이어 반대쪽으로 물러난다. 맵 끝이라 못 물러나면 아무 방향.
+    ///   너무 멀면(WanderMaxDistance 바깥) 플레이어 쪽으로 따라간다. 보통 걸음, 많이 멀면 달린다.
+    ///   그 사이면 갈 수 있는 방향 중 아무 쪽.
     /// </summary>
-    void StartFidget()
+    void StartWanderMove()
     {
-        float maxDistance = Mathf.Min(fidgetDistance, holdLeashMin * 0.8f);
-        Vector2 r = Random.insideUnitCircle * maxDistance;
-        fidgetOffset = new Vector3(r.x, 0f, r.y);
+        float dx = body.position.x - target.transform.position.x;
+        float distX = Mathf.Abs(dx);
+        Vector2 away = new Vector2(dx >= 0f ? 1f : -1f, 0f);
 
-        holdPhase = HoldPhase.Fidget;
-        fidgetTimer = Random.Range(fidgetIntervalMin, fidgetIntervalMax);
+        wanderPaused = false;
+        wanderCatchingUp = distX > WanderMaxDistance;
+        wanderTimer = Random.Range(wanderMoveMin, wanderMoveMax);
+
+        if (wanderCatchingUp)
+            wanderDir = -away;
+        else if (distX < WanderMinDistance && !WanderBlocked(away))
+            wanderDir = away;
+        else
+            wanderDir = RandomWanderDirection();
+    }
+
+    /// <summary>맵 끝에 막히지 않은 방향 가운데 하나를 고른다. 모두 막혔으면 zero.</summary>
+    Vector2 RandomWanderDirection()
+    {
+        int start = Random.Range(0, WanderDirections.Length);
+        for (int i = 0; i < WanderDirections.Length; i++)
+        {
+            Vector2 d = WanderDirections[(start + i) % WanderDirections.Length];
+            if (!WanderBlocked(d)) return d;
+        }
+        return Vector2.zero;
+    }
+
+    /// <summary>그 방향(WanderDirections 중 하나)으로 맵 끝이 WanderEdgeMargin보다 가까운지. 맵이 없으면 늘 false.</summary>
+    bool WanderBlocked(Vector2 dir)
+    {
+        if (map == null) return false;
+
+        Bounds b = map.Bounds;
+        Vector3 p = body.position;
+        if (dir.x > 0f) return b.max.x - p.x < WanderEdgeMargin;
+        if (dir.x < 0f) return p.x - b.min.x < WanderEdgeMargin;
+        if (dir.y > 0f) return b.max.z - p.z < WanderEdgeMargin;
+        return p.z - b.min.z < WanderEdgeMargin;
     }
 
     /// <summary>
@@ -700,14 +713,54 @@ public class EnemyBrain : MonoBehaviour
         return x >= map.Bounds.min.x && x <= map.Bounds.max.x;
     }
 
-    /// <summary>그쪽 공격권이 비어 있고 쓸 수 있으면 가져간다.</summary>
-    bool TryClaimToken(int side)
+    /// <summary>
+    /// 그쪽 공격권이 비어 있고 쓸 수 있으면, 그쪽에서 Hold 중인(맞는 중 제외) 적 가운데 플레이어와 가장 가까운 적에게 준다.
+    /// 반대편 적은 고르지 않는다 — 적이 한쪽에만 몰려 있으면 그쪽에서만 공격한다. 받을 적이 없으면 비워둔다.
+    /// 공격권을 넘기는 적(PassToken)도, 빈 공격권을 본 Hold 적도 이걸 부른다. 누가 부르든 고르는 기준은 같다.
+    /// </summary>
+    void GiveToken(int side)
     {
-        if (Holder(side) != null || !SideAvailable(side)) return false;
+        if (Holder(side) != null || !SideAvailable(side)) return;
 
+        Vector3 t = target.transform.position;
+        EnemyBrain best = null;
+        float bestDist = float.MaxValue;
+
+        // List<T>의 foreach는 구조체 열거자를 써서 할당이 생기지 않는다.
+        foreach (EnemyBrain other in active)
+        {
+            if (other.aiState != AIState.Hold || other.stunned) continue;
+            if (SideOf(other.body.position) != side) continue;
+
+            float d = FlatDistance(other.body.position, t);
+            if (d < bestDist)
+            {
+                best = other;
+                bestDist = d;
+            }
+        }
+
+        if (best != null)
+            best.ReceiveToken(side);
+    }
+
+    /// <summary>공격권을 넘겨받는다. 곧바로 덤비지 않고 Receive에서 잠시 노려본다.</summary>
+    void ReceiveToken(int side)
+    {
         SetHolder(side, this);
         tokenSide = side;
-        return true;
+        aiState = AIState.Receive;
+        stateTimer = receiveDuration;
+    }
+
+    /// <summary>쥐고 있는 공격권을 내놓고, 그쪽에서 기다리던 적 가운데 받을 적을 골라 넘긴다.</summary>
+    void PassToken()
+    {
+        int side = tokenSide;
+        if (side == 0) return;
+
+        ReleaseToken();
+        GiveToken(side);
     }
 
     /// <summary>쥐고 있는 공격권을 내놓는다. 쥔 게 없으면 아무것도 하지 않는다.</summary>
@@ -722,31 +775,6 @@ public class EnemyBrain : MonoBehaviour
 
     /// <summary>플레이어 기준으로 pos가 어느 쪽인지. 오른쪽(같은 X 포함)이면 1, 왼쪽이면 -1.</summary>
     int SideOf(Vector3 pos) => pos.x >= target.transform.position.x ? 1 : -1;
-
-    /// <summary>
-    /// 내가 서 있는 쪽의 공격권이 비어 있고, 그쪽에서 Hold 중인(맞는 중 제외) 적 가운데
-    /// 내가 플레이어와 가장 가까우면 가져간다. 반대편 공격권은 비어 있어도 넘보지 않는다 —
-    /// 적이 한쪽에만 몰려 있으면 그쪽에서만 공격한다.
-    /// 거리가 똑같으면 둘 다 자기가 가장 가깝다고 보지만, 먼저 판단한 쪽이 가져가고 다른 쪽은
-    /// TryClaimToken에서 실패하므로 한쪽 공격권이 둘에게 가지는 않는다.
-    /// </summary>
-    bool TryClaimAsClosest()
-    {
-        int mySide = SideOf(body.position);
-        if (Holder(mySide) != null || !SideAvailable(mySide)) return false;
-
-        float myDist = FlatDistance(body.position, target.transform.position);
-
-        // List<T>의 foreach는 구조체 열거자를 써서 할당이 생기지 않는다.
-        foreach (EnemyBrain other in active)
-        {
-            if (other == this || other.aiState != AIState.Hold || other.stunned) continue;
-            if (SideOf(other.body.position) != mySide) continue;
-            if (FlatDistance(other.body.position, target.transform.position) < myDist) return false;
-        }
-
-        return TryClaimToken(mySide);
-    }
 
     /// <summary>
     /// 내 공격권 쪽에서 Hold 중인(맞는 중 제외) 적 가운데 나보다 플레이어에 가까운 적이 있는지.
@@ -768,14 +796,15 @@ public class EnemyBrain : MonoBehaviour
 
     /// <summary>
     /// 공격권 쪽 자리가 맵 밖으로 밀려났으면(플레이어가 벽에 붙었으면) 공격권을 내놓고 Hold로 간다.
-    /// Approach·Engage에서만 본다 — 이미 달려드는 중(Rush)이거나 휘두르는 중이면 끝까지 간다.
+    /// 그쪽은 아무도 쓸 수 없으니 넘기지 않는다.
+    /// Receive·Approach·Engage에서만 본다 — 이미 달려드는 중(Rush)이거나 휘두르는 중이면 끝까지 간다.
     /// </summary>
     bool LoseTokenIfSideBlocked()
     {
         if (SideAvailable(tokenSide)) return false;
 
         ReleaseToken();
-        aiState = AIState.Hold;
+        EnterHold();
         return true;
     }
 
@@ -866,66 +895,6 @@ public class EnemyBrain : MonoBehaviour
     {
         Vector3 t = target.transform.position;
         return new Vector3(t.x + tokenSide * distance, body.position.y, t.z);
-    }
-
-    /// <summary>
-    /// 공격권이 없는 적의 바깥 대기 위치. 같은 쪽 Hold 적들 사이의 순번(HoldSlotIndex)으로 자리를 나눠
-    /// 겹치지 않게 한다. 두 자리가 한 줄이다:
-    ///   0번 아래, 1번 위 — 대기 거리 + outerMargin
-    ///   2번 아래, 3번 위 — 거기서 holdSpacing만큼 더 바깥 …
-    /// 위아래는 플레이어 라인에서 zSpread만큼 비낀다. 좌우든 위아래든 그쪽이 맵 밖이면 반대쪽을 잡는다.
-    /// </summary>
-    Vector3 HoldPosition()
-    {
-        Vector3 t = target.transform.position;
-        Vector3 pos = body.position;
-
-        int side = SideOf(pos);
-        int slot = HoldSlotIndex(side);
-
-        float sideX = side;
-        float sideZ = slot % 2 == 0 ? -1f : 1f;
-        float distance = StandoffDistance + outerMargin + (slot / 2) * holdSpacing;
-        float x = t.x + sideX * distance;
-        float z = t.z + sideZ * zSpread;
-
-        if (map != null)
-        {
-            Bounds b = map.Bounds;
-            if (x < b.min.x || x > b.max.x) x = t.x - sideX * distance;
-            if (z < b.min.z || z > b.max.z) z = t.z - sideZ * zSpread;
-        }
-
-        return new Vector3(x, pos.y, z);
-    }
-
-    /// <summary>
-    /// 같은 쪽 Hold 적들 사이에서 나의 순번. 플레이어에 가까울수록 앞(안쪽 자리)이다 —
-    /// 공격권이 비면 들어가는 순서와 같다.
-    ///
-    /// 거리 차이가 holdSpacing의 절반 이내면 거리 대신 인스턴스 ID로 순서를 정한다. 위아래 한 쌍은
-    /// 플레이어까지 거리가 똑같아서, 거리만 보면 미세한 흔들림에 순번이 매 프레임 뒤바뀌고
-    /// 둘이 서로 자리를 바꾸려고 엇갈리며 떨게 된다.
-    /// </summary>
-    int HoldSlotIndex(int side)
-    {
-        Vector3 t = target.transform.position;
-        float myDist = FlatDistance(body.position, t);
-        float tieBand = holdSpacing * 0.5f;
-        int myId = GetInstanceID();
-
-        int index = 0;
-        foreach (EnemyBrain other in active)
-        {
-            if (other == this || other.aiState != AIState.Hold) continue;
-            if (SideOf(other.body.position) != side) continue;
-
-            float diff = FlatDistance(other.body.position, t) - myDist;
-            bool ahead = Mathf.Abs(diff) <= tieBand ? other.GetInstanceID() < myId : diff < 0f;
-            if (ahead) index++;
-        }
-
-        return index;
     }
 
     /// <summary>높이를 뺀 바닥 평면(X·Z) 거리.</summary>

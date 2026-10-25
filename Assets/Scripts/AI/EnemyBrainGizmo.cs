@@ -33,8 +33,9 @@ public class EnemyBrainGizmo : MonoBehaviour
              "공격 사거리는 실제 판정처럼 좌우 양쪽에 그린다.")]
     [SerializeField] private bool showRanges = true;
 
-    [Tooltip("지금 향하는 목표 지점(바깥 대기 위치·대기 위치·공격 위치)과 거기까지의 선(초록). Hold·Approach·Engage·Rush 중에만. " +
-             "Approach 중에는 대기 위치 주변의 Engage 진입 범위 원을, Hold 중에는 대기 자리 주변의 불감대 원(회색)을 함께 그린다.")]
+    [Tooltip("지금 향하는 목표 지점(배회 방향·대기 위치·공격 위치)과 거기까지의 선(초록). Hold·Approach·Engage·Rush 중에만. " +
+             "Approach 중에는 대기 위치 주변의 Engage 진입 범위 원을, Hold 중에는 배회 경계 세로선 두 줄(회색)을 함께 그린다 — " +
+             "동작을 마쳤을 때 안쪽 선보다 플레이어에 가까우면 물러나고, 바깥쪽 선보다 멀면 다가간다.")]
     [SerializeField] private bool showGoal = true;
 
     [Tooltip("목표 지점 좌우로 runDistance만큼 떨어진 세로선(하늘색). 이 선 바깥이면 달린다. Hold·Approach·Engage·Rush 중에만.")]
@@ -101,9 +102,9 @@ public class EnemyBrainGizmo : MonoBehaviour
             if (brain.State == EnemyBrain.AIState.Approach && !brain.IsStunned)
                 DrawCircle(goal, brain.EngageEnterRadius, GoalColor);
 
-            // Hold 중에는 대기 자리를 중심으로 이 적의 불감대를 그린다. 자리가 이 원 밖으로 벗어나야 따라 움직인다.
-            if (brain.State == EnemyBrain.AIState.Hold && !brain.IsStunned)
-                DrawCircle(brain.HoldSlot, brain.HoldLeash, Color.gray);
+            // Hold 중에는 내 쪽의 배회 경계를 그린다. 거리는 X만 보므로 세로선이다.
+            if (brain.State == EnemyBrain.AIState.Hold && !brain.IsStunned && brain.HasSkill)
+                DrawWanderLines(center);
         }
 
         if (showRunLines)
@@ -122,6 +123,26 @@ public class EnemyBrainGizmo : MonoBehaviour
                 Gizmos.DrawLine(new Vector3(x, goal.y, zMin), new Vector3(x, goal.y, zMax));
             }
         }
+    }
+
+    /// <summary>
+    /// 플레이어 기준 내 쪽(좌/우)에 배회 경계 두 줄을 긋는다. 안쪽이 WanderMinDistance, 바깥쪽이 WanderMaxDistance.
+    /// 맵이 있으면 맵의 앞뒤 끝까지, 없으면 몸 앞뒤로 바깥쪽 거리만큼 긋는다.
+    /// </summary>
+    void DrawWanderLines(Vector3 center)
+    {
+        Vector3 t = brain.TargetPosition;
+        float side = center.x >= t.x ? 1f : -1f;
+
+        MapBounds map = MapBounds.Instance;
+        float zMin = map != null ? map.Bounds.min.z : center.z - brain.WanderMaxDistance;
+        float zMax = map != null ? map.Bounds.max.z : center.z + brain.WanderMaxDistance;
+
+        Gizmos.color = Color.gray;
+        float xMin = t.x + side * brain.WanderMinDistance;
+        float xMax = t.x + side * brain.WanderMaxDistance;
+        Gizmos.DrawLine(new Vector3(xMin, center.y, zMin), new Vector3(xMin, center.y, zMax));
+        Gizmos.DrawLine(new Vector3(xMax, center.y, zMin), new Vector3(xMax, center.y, zMax));
     }
 
     /// <summary>
@@ -209,15 +230,16 @@ public class EnemyBrainGizmo : MonoBehaviour
                     text += " (대기)";
                 break;
             case EnemyBrain.AIState.Hold:
-                // 세부 움직임과, 이 적의 버릇(불감대·반응 시간).
-                switch (brain.CurrentHoldPhase)
-                {
-                    case EnemyBrain.HoldPhase.Reacting: text = $"Hold 반응 {brain.ReactionTimer:0.00}s"; break;
-                    case EnemyBrain.HoldPhase.Moving:   text = "Hold 이동"; break;
-                    case EnemyBrain.HoldPhase.Fidget:   text = "Hold 잔동작"; break;
-                    default:                            text = "Hold"; break;
-                }
-                text += $" (불감 {brain.HoldLeash:0.0}m · 반응 {brain.ReactionDelay:0.00}s)";
+                // 배회 중 지금 동작. 따라가기는 시간이 아니라 도착으로 끝나서 타이머를 띄우지 않는다.
+                if (brain.IsWanderPaused)
+                    text = $"Hold 멈춤 {brain.WanderTimer:0.0}s";
+                else if (brain.IsWanderCatchingUp)
+                    text = "Hold 따라감";
+                else
+                    text = $"Hold 이동 {DirectionArrow(brain.WanderDirection)} {brain.WanderTimer:0.0}s";
+                break;
+            case EnemyBrain.AIState.Receive:
+                text = $"Receive {brain.StateTimer:0.00}s";
                 break;
             case EnemyBrain.AIState.Rush:
                 text = $"Rush {brain.StateTimer:0.00}s";
@@ -250,11 +272,22 @@ public class EnemyBrainGizmo : MonoBehaviour
         return text;
     }
 
+    /// <summary>배회 방향을 화살표로. 위(↑)가 월드 +Z(화면 안쪽)다. 갈 곳이 없어 zero면 빈칸.</summary>
+    static string DirectionArrow(Vector2 dir)
+    {
+        if (dir.x > 0f) return "→";
+        if (dir.x < 0f) return "←";
+        if (dir.y > 0f) return "↑";
+        if (dir.y < 0f) return "↓";
+        return "";
+    }
+
     static Color StateColor(EnemyBrain.AIState s)
     {
         switch (s)
         {
             case EnemyBrain.AIState.Hold:     return Color.gray;
+            case EnemyBrain.AIState.Receive:  return new Color(1f, 0.6f, 0.8f);
             case EnemyBrain.AIState.Approach: return GoalColor;
             case EnemyBrain.AIState.Engage:   return EngageColor;
             case EnemyBrain.AIState.Rush:     return new Color(1f, 0.3f, 0.3f);
