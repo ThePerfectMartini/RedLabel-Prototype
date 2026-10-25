@@ -3,7 +3,7 @@ using UnityEditor;
 /// <summary>
 /// SkillData의 인스펙터. 쓰이지 않는 칸을 회색으로 잠근다.
 ///  - '띄우는 공격'이 꺼져 있으면 지상 런치 파워 칸.
-///  - 공격 타입이 Lunge Attack이 아니면 밀려나가는 거리 칸.
+///  - 공격 타입이 Lunge Attack이 아니면 밀려나가는 거리·돌진 방식 칸.
 ///
 /// 유니티에는 "이 필드는 저 체크박스가 켜졌을 때만 만질 수 있다"를 선언할 방법이 없어서,
 /// 기본 인스펙터를 직접 그리는 것 말고는 방법이 없다.
@@ -24,6 +24,7 @@ public class SkillDataEditor : Editor
     const string GroundLaunchFieldName = "groundLaunchPower";
     const string AttackTypeFieldName = "attackType";
     const string LungeDistanceFieldName = "lungeDistance";
+    const string LungeMotionFieldName = "lungeMotion";
 
     public override void OnInspectorGUI()
     {
@@ -48,7 +49,7 @@ public class SkillDataEditor : Editor
                            && launcher != null
                            && !launcher.boolValue)
                           // AttackType은 값을 따로 지정하지 않아 선언 순서가 곧 enumValueIndex다.
-                          || (prop.name == LungeDistanceFieldName
+                          || ((prop.name == LungeDistanceFieldName || prop.name == LungeMotionFieldName)
                               && attackType != null
                               && attackType.enumValueIndex != (int)AttackType.LungeAttack);
 

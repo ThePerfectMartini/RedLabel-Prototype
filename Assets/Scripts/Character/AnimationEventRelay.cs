@@ -8,8 +8,13 @@ using UnityEngine;
 ///
 /// [준비물] 이 오브젝트에 Animator, 계층 위쪽에 Character, 그 아래 어딘가에 AttackCore + MovementCore.
 /// [클립 이벤트] 공격 타격 프레임 → OnAttackHitFrame
+///              움직이며 계속 판정하는 구간의 시작·끝 → OnAttackHitStart / OnAttackHitEnd
+///                (구간 동안 매 프레임 판정, 대상마다 한 번만. 끝이 없으면 공격 동작이 끝날 때 닫힌다.
+///                 클립에 OnComboWindowOpen이 없으면 콤보 창은 구간이 열릴 때 열린다)
 ///              콤보 캔슬이 허용되는 프레임 → OnComboWindowOpen (선택. 없으면 타격 프레임에 콤보 창이 열린다)
 ///              점프 준비 클립의 끝 → OnJumpTakeoff (없으면 준비 동작에서 영영 뜨지 못한다)
+///              Lunge Attack의 돌진 출발 → OnLungeStart (선택. 없으면 공격 시작 순간 출발한다)
+///              Lunge Attack의 돌진 도착 → OnLungeEnd (선택. 없으면 Burst는 마찰로, Constant는 클립 끝에 멈춘다)
 /// </summary>
 public class AnimationEventRelay : MonoBehaviour
 {
@@ -47,6 +52,29 @@ public class AnimationEventRelay : MonoBehaviour
     }
 
     /// <summary>
+    /// 공격 클립에서 계속 판정하는 구간이 시작되는 프레임에 거는 이벤트. 이 프레임부터 매 프레임 판정한다.
+    /// 클립에 OnComboWindowOpen이 따로 없으면 콤보 창도 여기서 열린다(OnAttackHitFrame과 같다).
+    /// 이 함수 이름이 곧 Animation Event의 Function 값이 되므로 함부로 바꾸면 클립 쪽이 끊긴다.
+    /// </summary>
+    public void OnAttackHitStart()
+    {
+        if (attack == null) return;
+
+        attack.OpenHitWindow();
+        attack.OpenComboWindow(true);
+    }
+
+    /// <summary>
+    /// 공격 클립에서 계속 판정하는 구간이 끝나는 프레임에 거는 이벤트.
+    /// 이 함수 이름이 곧 Animation Event의 Function 값이 되므로 함부로 바꾸면 클립 쪽이 끊긴다.
+    /// </summary>
+    public void OnAttackHitEnd()
+    {
+        if (attack != null)
+            attack.CloseHitWindow();
+    }
+
+    /// <summary>
     /// 공격 클립에서 다음 콤보로 끊고 넘어가도 되는 프레임에 거는 이벤트.
     /// 이 함수 이름이 곧 Animation Event의 Function 값이 되므로 함부로 바꾸면 클립 쪽이 끊긴다.
     /// </summary>
@@ -64,5 +92,25 @@ public class AnimationEventRelay : MonoBehaviour
     {
         if (movement != null)
             movement.Jump();
+    }
+
+    /// <summary>
+    /// Lunge Attack 클립에서 준비 자세가 끝나고 돌진을 출발하는 프레임에 거는 이벤트.
+    /// 이 함수 이름이 곧 Animation Event의 Function 값이 되므로 함부로 바꾸면 클립 쪽이 끊긴다.
+    /// </summary>
+    public void OnLungeStart()
+    {
+        if (attack != null)
+            attack.StartLunge();
+    }
+
+    /// <summary>
+    /// Lunge Attack 클립에서 돌진이 끝나고 도착 자세가 시작되는 프레임에 거는 이벤트.
+    /// 이 함수 이름이 곧 Animation Event의 Function 값이 되므로 함부로 바꾸면 클립 쪽이 끊긴다.
+    /// </summary>
+    public void OnLungeEnd()
+    {
+        if (attack != null)
+            attack.EndLunge();
     }
 }

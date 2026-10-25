@@ -6,11 +6,14 @@ using UnityEngine;
 ///
 /// 상태:
 ///   Idle      — 플레이어가 감지 거리 안에 들어올 때까지 서 있는다. 한 번 감지하면 다시 돌아오지 않는다.
-///   Approach  — 플레이어 옆, 같은 라인(Z)의 공격 위치로 간다. 멀면 달린다. 사거리에 들어오면 Telegraph로.
-///   Telegraph — 멈춰서 telegraphDuration초 노려본다(예고). 바라보는 방향은 들어오는 순간 고정한다 —
+///   Approach  — 플레이어 옆, 같은 라인(Z)의 일반공격 위치로 간다. 멀면 달린다. 가는 동안 매 프레임 패턴을 고른다:
+///                 일반공격 사거리 안이면 → 일반공격.
+///                 일반공격 X 사거리 밖이고 돌진 사거리 안이며 쿨타임이 지났으면 → 돌진.
+///               다가오다 보면 돌진 사거리의 바깥 끝에 먼저 닿으므로, 돌진은 먼 거리에서 나간다.
+///   Telegraph — 멈춰서 고른 패턴의 예고 시간만큼 노려본다. 바라보는 방향은 들어오는 순간 고정한다 —
 ///               그 사이 뒤로 돌아가거나 라인을 벗어나면 피할 수 있다. 시간이 다 되면 사거리와 상관없이 친다.
 ///   Attack    — 맞든 빗나가든 콤보를 끝까지 잇는다. 패턴이 늘 똑같아야 플레이어가 외워서 파훼할 수 있다.
-///   Recover   — recoverDuration초 제자리에 선다(빈틈). 플레이어가 반격할 틈이다. 지나면 Approach로.
+///   Recover   — 고른 패턴의 빈틈 시간만큼 제자리에 선다. 플레이어가 반격할 틈이다. 지나면 Approach로.
 ///   Groggy    — 그로기 게이지가 다 차면 어느 상태에서든 들어온다. 하던 공격을 끊고 제자리에 서서
 ///               groggyDuration초 동안 슈퍼아머를 끈다. 지나면 슈퍼아머를 다시 켜고 게이지를 비운 뒤 Approach로.
 ///
@@ -69,6 +72,24 @@ public class BossBrain : MonoBehaviour
     [Min(0f)]
     [SerializeField] private float recoverDuration = 1.2f;
 
+    [Header("돌진")]
+    [Tooltip("일반공격 사거리 밖에서 쓰는 돌진공격. 보통 Lunge Attack에 lungeDistance를 크게 준 스킬이다. " +
+             "돌진 사거리는 lungeDistance를 다 간 뒤의 판정 상자 끝까지로 계산하므로, 타격 프레임이 이르면 실제로는 덜 닿는다. " +
+             "비워두면 돌진을 쓰지 않는다.")]
+    [SerializeField] private SkillData dashSkill;
+
+    [Tooltip("돌진 전에 멈춰서 노려보는 시간(초).")]
+    [Min(0f)]
+    [SerializeField] private float dashTelegraphDuration = 1f;
+
+    [Tooltip("돌진이 끝난 뒤 제자리에 서 있는 시간(초).")]
+    [Min(0f)]
+    [SerializeField] private float dashRecoverDuration = 1.8f;
+
+    [Tooltip("돌진을 한 번 쓰면 이 시간(초) 동안 다시 쓰지 않는다. 예고를 시작한 순간부터 센다.")]
+    [Min(0f)]
+    [SerializeField] private float dashCooldown = 6f;
+
     [Header("그로기")]
     [Tooltip("그로기 게이지의 최댓값. 받은 피해만큼 차고, 이 값에 닿으면 그로기에 빠진다.")]
     [Min(1f)]
@@ -94,6 +115,15 @@ public class BossBrain : MonoBehaviour
     /// <summary>Telegraph·Recover·Groggy에서 남은 시간. 세 상태가 겹칠 일이 없어 하나로 같이 쓴다.</summary>
     float stateTimer;
 
+    /// <summary>이번에 고른 패턴의 스킬. Telegraph에서 고르고 Attack이 쓴다.</summary>
+    SkillData patternSkill;
+
+    /// <summary>이번에 고른 패턴의 빈틈 시간. Recover가 쓴다.</summary>
+    float patternRecoverDuration;
+
+    /// <summary>돌진을 다시 쓸 수 있을 때까지 남은 시간. 0 이하면 쓸 수 있다.</summary>
+    float dashCooldownTimer;
+
     /// <summary>지금 그로기 게이지. 그로기 동안은 꽉 찬 채로 있다가 끝날 때 0이 된다.</summary>
     float groggyGauge;
 
@@ -106,20 +136,17 @@ public class BossBrain : MonoBehaviour
     /// 이 스킬로 닿는 X 거리. 판정 상자의 먼 쪽 끝에 Lunge로 밀려나가는 거리를 더한 값이다.
     /// EnemyBrain.Reach와 같은 계산이다.
     /// </summary>
-    float Reach
+    static float Reach(SkillData skill)
     {
-        get
-        {
-            float lunge = attackSkill.attackType == AttackType.LungeAttack ? attackSkill.lungeDistance : 0f;
-            return attackSkill.attackDistance + attackSkill.attackBoxSize.x * 0.5f + lunge;
-        }
+        float lunge = skill.attackType == AttackType.LungeAttack ? skill.lungeDistance : 0f;
+        return skill.attackDistance + skill.attackBoxSize.x * 0.5f + lunge;
     }
 
     /// <summary>판정 상자의 안쪽 끝까지의 X 거리. 상대가 이보다 가까우면 상자가 몸 앞으로 지나가 헛친다.</summary>
-    float MinReach => attackSkill.attackDistance - attackSkill.attackBoxSize.x * 0.5f;
+    static float MinReach(SkillData skill) => skill.attackDistance - skill.attackBoxSize.x * 0.5f;
 
     /// <summary>이 스킬로 닿는 Z(라인) 차이. 판정 상자 폭의 절반이다.</summary>
-    float ZTolerance => attackSkill.attackBoxSize.z * 0.5f;
+    static float ZTolerance(SkillData skill) => skill.attackBoxSize.z * 0.5f;
 
     void Awake()
     {
@@ -170,6 +197,9 @@ public class BossBrain : MonoBehaviour
             return;
         }
 
+        if (dashCooldownTimer > 0f)
+            dashCooldownTimer -= Time.deltaTime;
+
         // 그로기 시간은 맞는 중(경직·띄워짐·쓰러짐)에도 흐른다 — 그 사이가 곧 콤보를 넣는 시간이다.
         // 떠 있는 채로 끝나면 착지·누움·일어서기는 그대로 하고, 그 뒤로 들어오는 공격은 다시 슈퍼아머가 막는다.
         if (aiState == AIState.Groggy)
@@ -196,14 +226,16 @@ public class BossBrain : MonoBehaviour
                 break;
 
             case AIState.Approach:
-                if (InRange())
+                if (InRange(attackSkill))
                 {
-                    // 방향은 여기서 한 번만 맞추고 공격이 끝날 때까지 고정한다.
-                    // 판정·Lunge가 FacingDir을 따르므로, 이 사이 뒤로 돌아간 플레이어는 맞지 않는다.
-                    movement.FaceTowards(target.transform.position.x);
-                    movement.SetMoveInput(Vector2.zero);
-                    aiState = AIState.Telegraph;
-                    stateTimer = telegraphDuration;
+                    StartTelegraph(attackSkill, telegraphDuration, recoverDuration);
+                    break;
+                }
+
+                if (DashUsable())
+                {
+                    StartTelegraph(dashSkill, dashTelegraphDuration, dashRecoverDuration);
+                    dashCooldownTimer = dashCooldown;
                     break;
                 }
 
@@ -216,7 +248,7 @@ public class BossBrain : MonoBehaviour
                 stateTimer -= Time.deltaTime;
                 if (stateTimer <= 0f)
                 {
-                    attack.TryAttack(attackSkill);
+                    attack.TryAttack(patternSkill);
                     aiState = AIState.Attack;
                 }
                 break;
@@ -226,14 +258,14 @@ public class BossBrain : MonoBehaviour
                 if (!attack.IsAttacking)
                 {
                     aiState = AIState.Recover;
-                    stateTimer = recoverDuration;
+                    stateTimer = patternRecoverDuration;
                 }
                 else
                 {
                     // 맞았는지와 상관없이 다음 단계를 누른다. 콤보 창이 아직 안 열렸거나 마지막 단계면
                     // AttackCore가 알아서 버리므로, 열릴 때까지 매 프레임 눌러둔다.
                     // 이동 입력은 넣지 않는다 — Lunge 속도가 지워진다.
-                    attack.TryAttack(attackSkill);
+                    attack.TryAttack(patternSkill);
                 }
                 break;
 
@@ -286,24 +318,51 @@ public class BossBrain : MonoBehaviour
     }
 
     /// <summary>
-    /// 지금 치면 닿는지. 판정 상자의 안쪽 끝~바깥쪽 끝(Lunge 포함) 사이이고, 라인이 상자 폭 안이어야 한다.
-    /// EnemyBrain.InRange와 같은 계산이다.
+    /// 패턴을 골라 예고를 시작한다. 방향은 여기서 한 번만 맞추고 공격이 끝날 때까지 고정한다.
+    /// 판정·Lunge가 FacingDir을 따르므로, 이 사이 뒤로 돌아간 플레이어는 맞지 않는다.
     /// </summary>
-    bool InRange()
+    void StartTelegraph(SkillData skill, float telegraph, float recover)
     {
-        Vector3 d = target.transform.position - body.position;
-        float dx = Mathf.Abs(d.x);
-        return dx >= MinReach && dx <= Reach && Mathf.Abs(d.z) <= ZTolerance;
+        movement.FaceTowards(target.transform.position.x);
+        movement.SetMoveInput(Vector2.zero);
+        patternSkill = skill;
+        patternRecoverDuration = recover;
+        aiState = AIState.Telegraph;
+        stateTimer = telegraph;
     }
 
     /// <summary>
-    /// 플레이어 옆의 공격 위치. 같은 라인(Z)에서, 지금 보스가 있는 쪽(좌/우)으로 사거리 안쪽만큼 떨어진 곳이다.
+    /// 지금 돌진을 쓸 수 있는지. 돌진 스킬이 있고, 쿨타임이 지났고, 플레이어가 일반공격의 X 사거리 밖이면서
+    /// 돌진 사거리 안이어야 한다. 일반공격은 라인(Z)이 안 맞아서 못 치는 것일 수도 있으므로 X 거리로만 가른다 —
+    /// 그래야 가까이 붙어 있을 때 돌진이 나가지 않는다.
+    /// </summary>
+    bool DashUsable()
+    {
+        if (dashSkill == null || dashCooldownTimer > 0f) return false;
+
+        float dx = Mathf.Abs(target.transform.position.x - body.position.x);
+        return dx > Reach(attackSkill) && InRange(dashSkill);
+    }
+
+    /// <summary>
+    /// 이 스킬로 지금 치면 닿는지. 판정 상자의 안쪽 끝~바깥쪽 끝(Lunge 포함) 사이이고, 라인이 상자 폭 안이어야 한다.
+    /// EnemyBrain.InRange와 같은 계산이다.
+    /// </summary>
+    bool InRange(SkillData skill)
+    {
+        Vector3 d = target.transform.position - body.position;
+        float dx = Mathf.Abs(d.x);
+        return dx >= MinReach(skill) && dx <= Reach(skill) && Mathf.Abs(d.z) <= ZTolerance(skill);
+    }
+
+    /// <summary>
+    /// 플레이어 옆의 일반공격 위치. 같은 라인(Z)에서, 지금 보스가 있는 쪽(좌/우)으로 사거리 안쪽만큼 떨어진 곳이다.
     /// 그쪽이 맵 밖이면(플레이어가 벽에 붙었으면) 반대쪽으로 잡는다. 안 그러면 닿을 수 없는 자리로 영영 걷는다.
     /// </summary>
     Vector3 AttackPosition()
     {
         Vector3 t = target.transform.position;
-        float distance = Reach * StandDistanceRatio;
+        float distance = Reach(attackSkill) * StandDistanceRatio;
         int side = body.position.x >= t.x ? 1 : -1;
 
         float x = t.x + side * distance;

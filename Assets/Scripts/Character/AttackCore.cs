@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -21,6 +22,14 @@ using UnityEngine;
 /// 다른 키의 입력은 원래 버리지만, cancelsBasicAttack이 켜진 스킬은 지상 기본공격 콤보를
 /// 언제든 끊고 곧바로 시작한다(예: X 도중의 Z).
 ///
+/// Lunge Attack의 돌진도 여기서 굴린다. 클립에 OnLungeStart 이벤트가 있으면 그때까지 제자리에 서 있다가 출발하고,
+/// OnLungeEnd 이벤트가 있으면 그때 멈춘다. 출발한 뒤의 움직임은 SkillData.lungeMotion이 정한다 —
+/// Burst는 MovementCore.Lunge로 한 번 밀고 마찰에 맡기며, Constant는 도착까지 매 프레임 같은 속도로 민다.
+///
+/// 판정은 두 가지로 낼 수 있다. OnAttackHitFrame은 그 한 순간에 한 번 판정한다(여러 개 넣으면 다단히트).
+/// OnAttackHitStart~OnAttackHitEnd는 그 구간 동안 매 프레임, 그 순간의 몸 위치로 판정한다 — 돌진처럼 움직이며 치는 공격용이다.
+/// 구간 안에서는 대상마다 한 번만 맞는다.
+///
 /// 흐름:  X·Z키 → TryAttack(스킬) → (StateMachine이 그 스킬의 클립 재생) → (타격 프레임) Animation Event
 ///        → AnimationEventRelay.OnAttackHitFrame() → ExecuteHit() → OverlapBox
 ///
@@ -34,6 +43,9 @@ public class AttackCore : MonoBehaviour
     /// 판정 기즈모를 보여주는 시간(초). 판정 자체는 한 순간이라 그냥은 눈에 안 보이기 때문에 남겨둔다.
     /// </summary>
     const float HitGizmoDuration = 0.3f;
+
+    /// <summary>판정 한 번에 잡을 수 있는 콜라이더 수. 바닥·배경도 걸리므로 캐릭터 수보다 넉넉하게 둔다.</summary>
+    const int MaxHitColliders = 32;
 
     /// <summary>이 Core가 속한 캐릭터. 몸 transform을 여기서 받아간다.</summary>
     Character character;
@@ -65,6 +77,21 @@ public class AttackCore : MonoBehaviour
     /// </summary>
     bool clipHasComboWindowEvent;
 
+    /// <summary>지금 클립의 OnLungeStart 이벤트 시각(초). 없으면 -1이고, 공격 시작 순간 출발한다.</summary>
+    float lungeStartTime;
+
+    /// <summary>지금 클립의 OnLungeEnd 이벤트 시각(초). 없으면 -1이다.</summary>
+    float lungeEndTime;
+
+    /// <summary>지금 클립의 길이. 등속 돌진에 OnLungeEnd가 없을 때 도착 시각으로 쓴다.</summary>
+    float clipLength;
+
+    /// <summary>등속 돌진 중인지. 출발할 때 켜지고, 도착하거나 공격이 끊기면 꺼진다.</summary>
+    bool constantLunging;
+
+    /// <summary>등속 돌진 속도(m/s). 거리 ÷ (도착 시각 − 출발 시각).</summary>
+    float constantLungeSpeed;
+
     /// <summary>남은 공격 시간. 0보다 크면 공격 동작 중이다.</summary>
     float attackTimer;
 
@@ -86,6 +113,18 @@ public class AttackCore : MonoBehaviour
     /// AI가 맞혔을 때만 콤보를 잇는 데 쓴다.
     /// </summary>
     bool hitLanded;
+
+    /// <summary>판정 구간(OnAttackHitStart~OnAttackHitEnd)이 열려 있는지. 열려 있는 동안 Update가 매 프레임 판정한다.</summary>
+    bool hitWindowOpen;
+
+    /// <summary>이번 판정 구간에서 이미 맞힌 캐릭터. 구간이 열릴 때 비운다. 한 구간에 대상마다 한 번만 맞히는 데 쓴다.</summary>
+    readonly HashSet<Character> hitThisWindow = new HashSet<Character>();
+
+    /// <summary>
+    /// 판정 상자에 걸린 콜라이더를 받는 배열. 구간 판정이 매 프레임 돌아서, 매번 새 배열을 만들지 않으려고 미리 만들어 둔다.
+    /// 한 번에 이 개수를 넘는 콜라이더는 잡히지 않는다.
+    /// </summary>
+    readonly Collider[] hitBuffer = new Collider[MaxHitColliders];
 
     // ── 기즈모 표시용. 판정이 일어난 '그 순간'의 상자를 기억한다.
     Vector3 lastHitCenter;
@@ -150,16 +189,27 @@ public class AttackCore : MonoBehaviour
         return null;
     }
 
-    /// <summary>클립에 OnComboWindowOpen 이벤트가 걸려 있는지.</summary>
-    static bool HasComboWindowEvent(AnimationClip clip)
+    /// <summary>
+    /// 클립에 걸린 이벤트 가운데 이 스크립트가 미리 알아야 하는 것들을 읽는다:
+    /// OnComboWindowOpen이 있는지, OnLungeStart / OnLungeEnd가 몇 초에 있는지. 클립이 없으면 전부 없는 것으로 둔다.
+    /// </summary>
+    void ReadClipEvents(AnimationClip clip)
     {
+        clipHasComboWindowEvent = false;
+        lungeStartTime = -1f;
+        lungeEndTime = -1f;
+        if (clip == null) return;
+
         // clip.events는 부를 때마다 배열을 새로 만들어 돌려준다. 공격 시작 때 한 번만 부르므로 괜찮다.
         foreach (AnimationEvent evt in clip.events)
         {
             if (evt.functionName == nameof(AnimationEventRelay.OnComboWindowOpen))
-                return true;
+                clipHasComboWindowEvent = true;
+            else if (evt.functionName == nameof(AnimationEventRelay.OnLungeStart))
+                lungeStartTime = evt.time;
+            else if (evt.functionName == nameof(AnimationEventRelay.OnLungeEnd))
+                lungeEndTime = evt.time;
         }
-        return false;
     }
 
     void Update()
@@ -167,7 +217,27 @@ public class AttackCore : MonoBehaviour
         float dt = Time.deltaTime;
 
         if (attackTimer > 0f)
+        {
             attackTimer -= dt;
+
+            // 등속 돌진에 OnLungeEnd가 없으면 클립 끝이 도착이다. 그 자리에 멈춘다.
+            if (attackTimer <= 0f && constantLunging)
+            {
+                constantLunging = false;
+                movement.Lunge(0f);
+            }
+        }
+
+        // 등속 돌진은 매 프레임 밀어야 마찰에 깎이지 않는다.
+        if (constantLunging)
+            movement.MoveForward(constantLungeSpeed);
+
+        // 판정 구간. OnAttackHitEnd가 없으면 공격 동작이 끝날 때 닫힌다.
+        if (hitWindowOpen)
+        {
+            if (IsAttacking) HitCheck(true);
+            else hitWindowOpen = false;
+        }
 
         // 공중 공격 중 착지. MovementCore와 Update 순서가 정해져 있지 않아 최대 한 프레임 늦을 수 있다.
         if (IsAttacking && startedAirborne && movement.IsGrounded)
@@ -233,24 +303,68 @@ public class AttackCore : MonoBehaviour
         currentSkill = skill;
         comboWindowOpen = false;
         hitLanded = false;
+        hitWindowOpen = false;
         startedAirborne = !movement.IsGrounded;
 
         // 동작 길이는 그 스킬의 클립에서 그때그때 읽는다. 스킬마다 클립이 다르기 때문이다.
         // 클립을 못 찾으면 0이라 IsAttacking이 서지 않고 공격이 통째로 불발된다.
         AnimationClip clip = FindClip(skill.animatorStateName);
-        attackTimer = clip != null ? clip.length : 0f;
-        clipHasComboWindowEvent = clip != null && HasComboWindowEvent(clip);
+        clipLength = clip != null ? clip.length : 0f;
+        attackTimer = clipLength;
+        ReadClipEvents(clip);
+        constantLunging = false;
 
-        // 공격 타입에 따라 시전자를 민다. Locked Attack은 거리 0이라 걷던 속도를 끊고 그 자리에 선다.
+        // 공격 타입에 따라 시전자를 민다. Locked Attack은 걷던 속도를 끊고 그 자리에 선다.
+        // Lunge Attack도 클립에 OnLungeStart가 있으면 일단 그 자리에 서서 준비 자세를 취하고, 그 이벤트에서 출발한다.
         // 콤보 단계마다 여기를 지나므로, 각 단계가 자기 타입으로 속도를 새로 정한다.
         // Jump Attack은 시전자 이동을 건드리지 않는다. 공중 이동은 MovementCore의 공중 조작이 맡는다.
-        if (skill.attackType != AttackType.JumpAttack)
-        {
-            float lungeDistance = skill.attackType == AttackType.LungeAttack ? skill.lungeDistance : 0f;
-            movement.Lunge(lungeDistance);
-        }
+        if (skill.attackType == AttackType.LungeAttack && lungeStartTime < 0f)
+            StartLunge();
+        else if (skill.attackType != AttackType.JumpAttack)
+            movement.Lunge(0f);
 
         attackStartCount++;
+    }
+
+    /// <summary>
+    /// 돌진을 출발한다. 클립의 OnLungeStart 이벤트가 AnimationEventRelay를 거쳐 부르고,
+    /// 그 이벤트가 없는 클립이면 공격 시작 순간 Begin이 부른다. Lunge Attack 동작 중이 아니면 무시한다.
+    ///
+    /// Burst는 lungeDistance만큼 한 번 밀고 마찰에 맡긴다. Constant는 도착 시각(OnLungeEnd, 없으면 클립 끝)에
+    /// 정확히 lungeDistance에 닿는 속도를 구해 그때까지 매 프레임 민다(Update).
+    /// </summary>
+    public void StartLunge()
+    {
+        if (!IsAttacking || currentSkill == null || currentSkill.attackType != AttackType.LungeAttack) return;
+
+        if (currentSkill.lungeMotion == LungeMotion.Burst)
+        {
+            movement.Lunge(currentSkill.lungeDistance);
+            return;
+        }
+
+        float start = Mathf.Max(lungeStartTime, 0f);
+        float end = lungeEndTime >= 0f ? lungeEndTime : clipLength;
+        if (end <= start)
+        {
+            Debug.LogWarning($"{name}: \"{currentSkill.animatorStateName}\" 클립의 돌진 도착(OnLungeEnd 또는 클립 끝)이 출발보다 빨라 돌진하지 않습니다.", this);
+            return;
+        }
+
+        constantLungeSpeed = currentSkill.lungeDistance / (end - start);
+        constantLunging = true;
+    }
+
+    /// <summary>
+    /// 돌진을 끝내고 그 자리에 멈춘다. 클립의 OnLungeEnd 이벤트가 AnimationEventRelay를 거쳐 부른다.
+    /// Lunge Attack 동작 중이 아니면 무시한다 — 맞아서 끊긴 뒤라면 넉백 속도를 지우면 안 된다.
+    /// </summary>
+    public void EndLunge()
+    {
+        if (!IsAttacking || currentSkill == null || currentSkill.attackType != AttackType.LungeAttack) return;
+
+        constantLunging = false;
+        movement.Lunge(0f);
     }
 
     /// <summary>
@@ -266,6 +380,10 @@ public class AttackCore : MonoBehaviour
         attackTimer = 0f;
         comboWindowOpen = false;
         comboRoot = null;
+
+        // 등속 돌진도 여기서 끊는다. 속도는 건드리지 않는다 — 맞아서 끊긴 거라면 넉백이 이미 들어가 있다.
+        constantLunging = false;
+        hitWindowOpen = false;
     }
 
     /// <summary>
@@ -286,7 +404,7 @@ public class AttackCore : MonoBehaviour
     }
 
     /// <summary>
-    /// 실제 타격 판정. 앞쪽 상자 안에 있는 다른 캐릭터를 전부 찾는다.
+    /// 한 순간의 타격 판정. 앞쪽 상자 안에 있는 다른 캐릭터를 전부 찾는다.
     ///
     /// 공격 클립의 타격 프레임에 걸린 Animation Event가 AnimationEventRelay를 거쳐 호출한다.
     /// Animation Event는 public이고 매개변수가 0~1개인 함수만 부를 수 있어서 형태를 이렇게 고정했다.
@@ -295,24 +413,56 @@ public class AttackCore : MonoBehaviour
     {
         if (currentSkill == null) return;
 
+        HitCheck(false);
+    }
+
+    /// <summary>
+    /// 판정 구간을 열고, 이 프레임부터 곧바로 판정한다. 이후로는 Update가 매 프레임 판정한다.
+    /// 공격 클립의 OnAttackHitStart 이벤트가 AnimationEventRelay를 거쳐 호출한다. 공격 동작 중이 아니면 무시한다.
+    /// </summary>
+    public void OpenHitWindow()
+    {
+        if (!IsAttacking || currentSkill == null) return;
+
+        hitWindowOpen = true;
+        hitThisWindow.Clear();
+        HitCheck(true);
+    }
+
+    /// <summary>판정 구간을 닫는다. 공격 클립의 OnAttackHitEnd 이벤트가 AnimationEventRelay를 거쳐 호출한다.</summary>
+    public void CloseHitWindow()
+    {
+        hitWindowOpen = false;
+    }
+
+    /// <summary>
+    /// 실제 타격 판정. 판정 시점의 몸 위치·방향으로 상자를 놓고, 걸린 캐릭터에게 넉백·경직·피해를 준다.
+    ///
+    /// 구간 판정(inWindow)이면 이번 구간에 이미 맞힌 캐릭터는 건너뛰고, 아무도 안 맞아도 허공 로그를 찍지 않는다 —
+    /// 매 프레임 돌아서 Console이 도배되기 때문이다.
+    /// </summary>
+    void HitCheck(bool inWindow)
+    {
         // 판정 시점의 위치·방향으로 계산한다. 누른 순간이 아니라 칼이 닿는 순간 기준이다.
+        // 구간 판정은 매 프레임 여기를 지나므로 돌진하면 상자도 따라간다.
         Vector3 center = body.position
                        + movement.FacingDir * currentSkill.attackDistance
                        + Vector3.up * currentSkill.attackHeight;
         Vector3 size = currentSkill.attackBoxSize;
 
-        Collider[] hits = Physics.OverlapBox(
+        int hitCount = Physics.OverlapBoxNonAlloc(
             center,
             size * 0.5f,                     // OverlapBox는 전체 크기가 아니라 절반 크기를 받는다
+            hitBuffer,
             Quaternion.identity,             // 좌우만 보므로 상자를 회전시킬 일이 없다
             ~0,                              // 모든 레이어. 나중에 대상 레이어만 거르려면 여기를 바꾼다
             QueryTriggerInteraction.Collide);
 
         int count = 0;
-        foreach (Collider hit in hits)
+        for (int i = 0; i < hitCount; i++)
         {
             // 콜라이더가 어느 자식에 붙어 있든, 위로 올라가며 그 콜라이더의 주인 캐릭터를 찾는다.
-            Character target = hit.GetComponentInParent<Character>();
+            Character target = hitBuffer[i].GetComponentInParent<Character>();
 
             if (target == null) continue;        // 바닥·배경 등 캐릭터가 아닌 것
             if (target == character) continue;   // 자기 자신
@@ -320,6 +470,9 @@ public class AttackCore : MonoBehaviour
             // 같은 진영은 때리지 않는다. Neutral은 진영이 없는 것으로 보고 누구와도 맞는다.
             // 걸러진 대상은 명중으로도 치지 않으므로, 히트 확인 콤보도 상대 진영을 맞혔을 때만 이어진다.
             if (character.Team != Team.Neutral && target.Team == character.Team) continue;
+
+            // 이번 구간에 이미 맞힌 대상이다. 콜라이더가 여럿인 캐릭터(누운 피격 박스 등)도 여기서 한 번으로 묶인다.
+            if (inWindow && hitThisWindow.Contains(target)) continue;
 
             // 넉백·에어본. 세기는 맞은 쪽이 아니라 때린 쪽 수치로 정한다.
             // 다만 지상용·공중용·누운 대상용 중 어느 수치를 쓸지는 맞은 쪽 상태가 정한다 — 서 있는 상대와
@@ -329,6 +482,9 @@ public class AttackCore : MonoBehaviour
 
             // 죽은 대상은 맞지 않는다. 명중으로도 치지 않는다.
             if (targetState != null && targetState.IsDead) continue;
+
+            if (inWindow)
+                hitThisWindow.Add(target);
 
             // 슈퍼아머면 밀지도 굳히지도 않는다. 피해만 주고 명중으로는 친다 — TakeHit을 건너뛰니 하던 공격도 끊기지 않는다.
             bool superArmor = targetState != null && targetState.HasSuperArmor;
@@ -374,16 +530,17 @@ public class AttackCore : MonoBehaviour
             Debug.Log($"[공격] {character.name} → {target.name} 명중 ({currentSkill.name}, 데미지 {currentSkill.damage}{healthText})", target.gameObject);
         }
 
-        if (count == 0)
+        if (count == 0 && !inWindow)
             Debug.Log($"[공격] {character.name} → 허공 ({currentSkill.name})", character.gameObject);
 
         // 한 동작에 타격 프레임이 여럿이어도, 한 번이라도 맞혔으면 명중으로 친다.
         if (count > 0)
             hitLanded = true;
 
+        // 구간 판정은 이번 구간에 한 번이라도 맞혔으면 빨갛게 둔다. 안 그러면 맞힌 프레임 하나만 빨갛다.
         lastHitCenter = center;
         lastHitSize = size;
-        lastHitAnything = count > 0;
+        lastHitAnything = inWindow ? hitThisWindow.Count > 0 : count > 0;
         hitGizmoTimer = HitGizmoDuration;
     }
 

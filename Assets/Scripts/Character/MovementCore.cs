@@ -343,6 +343,21 @@ public class MovementCore : MonoBehaviour
         velocity.z = 0f;
     }
 
+    /// <summary>
+    /// 바라보는 방향으로 speed(m/s)로 움직인다. 등속 돌진(LungeMotion.Constant) 동안 AttackCore가 부른다.
+    /// 매 프레임 불러야 한다 — 부른 프레임엔 마찰을 걸지 않는다(SetMoveInput과 같은 처리라 Update 순서와 무관하다).
+    /// 공중에서는 무시된다 — Lunge와 같은 규칙이다.
+    /// </summary>
+    public void MoveForward(float speed)
+    {
+        if (settings == null) return;
+        if (!isGrounded) return;
+
+        driven = true;
+        velocity.x = FacingDir.x * speed;
+        velocity.z = 0f;
+    }
+
     void Update()
     {
         float dt = Time.deltaTime;

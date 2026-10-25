@@ -302,7 +302,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StateMachine
   lieDownDuration: 1
-  superArmor: 0
 --- !u!114 &177635588
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -868,7 +867,7 @@ SpriteRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_Sprite: {fileID: 21300000, guid: 912043de168cc5d46986dc88fa4d0c75, type: 3}
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_Color: {r: 1, g: 0.4481132, b: 0.47568002, a: 1}
   m_FlipX: 0
   m_FlipY: 0
   m_DrawMode: 0
@@ -1167,7 +1166,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StateMachine
   lieDownDuration: 1
-  superArmor: 1
 --- !u!114 &539453910
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1239,7 +1237,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StateMachine
   lieDownDuration: 1
-  superArmor: 0
 --- !u!114 &543917290
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1344,6 +1341,7 @@ GameObject:
   - component: {fileID: 679124306}
   - component: {fileID: 679124305}
   - component: {fileID: 679124304}
+  - component: {fileID: 679124308}
   m_Layer: 0
   m_Name: Boss
   m_TagString: Untagged
@@ -1369,6 +1367,12 @@ MonoBehaviour:
   runDistance: 4
   telegraphDuration: 0.6
   recoverDuration: 1.2
+  dashSkill: {fileID: 11400000, guid: 9f6f03810e085614888dc35577e78260, type: 2}
+  dashTelegraphDuration: 1
+  dashRecoverDuration: 1.8
+  dashCooldown: 6
+  groggyGaugeMax: 150
+  groggyDuration: 4
 --- !u!114 &679124305
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1381,7 +1385,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9753ce65607ffd94593a947bc108409e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Health
-  maxHealth: 300
+  maxHealth: 500
   despawnDelay: 2
 --- !u!114 &679124306
 MonoBehaviour:
@@ -1415,6 +1419,21 @@ Transform:
   - {fileID: 539453908}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &679124308
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 679124303}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a9a0dfc59d4ea8349a9a2880b54c273b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BossStatusBars
+  heightOffset: 5
+  barSize: {x: 120, y: 10}
+  barSpacing: 4
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -2033,7 +2052,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StateMachine
   lieDownDuration: 1
-  superArmor: 0
 --- !u!1 &1284559787
 GameObject:
   m_ObjectHideFlags: 0
@@ -2438,7 +2456,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StateMachine
   lieDownDuration: 1
-  superArmor: 0
 --- !u!1 &1398298033
 GameObject:
   m_ObjectHideFlags: 0
@@ -2486,7 +2503,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::StateMachine
   lieDownDuration: 1
-  superArmor: 0
 --- !u!114 &1398298036
 MonoBehaviour:
   m_ObjectHideFlags: 0

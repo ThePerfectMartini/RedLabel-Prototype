@@ -18,6 +18,19 @@ public enum AttackType
 }
 
 /// <summary>
+/// Lunge Attack이 밀려나가는 모양. SkillData의 돌진 방식 드롭다운에 뜬다.
+/// 에셋에는 순서 번호로 저장되므로 새 방식은 항상 맨 뒤에 붙인다.
+/// </summary>
+public enum LungeMotion
+{
+    /// <summary>출발 순간 튀어나가 시전자의 groundFriction으로 서서히 멈춘다.</summary>
+    Burst,
+
+    /// <summary>출발~도착 사이를 일정한 속도로 정확히 lungeDistance만큼 간다.</summary>
+    Constant,
+}
+
+/// <summary>
 /// 공격 한 종류가 갖는 모든 수치를 담는 에셋. 기본공격·특수공격처럼 종류마다 하나씩 만든다.
 ///
 /// 캐릭터가 아니라 '공격'이 주인이다 — 같은 스킬을 여러 캐릭터가 공유할 수 있고,
@@ -59,13 +72,18 @@ public class SkillData : ScriptableObject
              "Locked·Lunge는 지상에서만 적용되고, 공중에서 공격하면 점프 중엔 방향키 조작이, 그 외엔 떠오를 때의 속도가 그대로 이어진다.")]
     public AttackType attackType = AttackType.LockedAttack;
 
-    [Tooltip("Lunge Attack일 때 공격 시작 순간부터 바라보는 방향으로 밀려나가는 거리(m). " +
-             "시전자의 groundFriction으로 서서히 멈추며, 마찰이 다른 캐릭터가 써도 가는 거리는 같다. " +
-             "멈추기까지 걸리는 시간은 √(2 x 거리 ÷ groundFriction)초이고, 이게 공격 클립보다 길면 " +
-             "공격이 끝나는 순간 남은 이동이 끊긴다. Locked Attack이면 쓰이지 않는다.")]
+    [Tooltip("Lunge Attack일 때 바라보는 방향으로 밀려나가는 거리(m). Locked Attack이면 쓰이지 않는다. " +
+             "클립에 OnLungeStart 이벤트가 있으면 그 전까지 제자리에 서 있다가(준비 자세) 그때 출발하고, 없으면 공격 시작 순간 출발한다. " +
+             "클립에 OnLungeEnd 이벤트가 있으면 그때 그 자리에 멈춘다(도착 자세). " +
+             "돌진 방식이 Burst면 마찰로 서서히 멈추며, 멈추기까지 √(2 x 거리 ÷ groundFriction)초가 걸린다 — " +
+             "그보다 OnLungeEnd나 클립 끝이 이르면 덜 간다. Constant면 OnLungeEnd(없으면 클립 끝)에 정확히 이 거리에 닿는다.")]
     [Min(0f)]
     [FormerlySerializedAs("dashDistance")]
     public float lungeDistance = 1f;
+
+    [Tooltip("Lunge Attack의 돌진 방식. Burst(기존)는 출발 순간 튀어나가 마찰로 서서히 멈추고, " +
+             "Constant(등속)는 출발~도착 사이를 일정한 속도로 간다. Locked Attack이면 쓰이지 않는다.")]
+    public LungeMotion lungeMotion = LungeMotion.Burst;
 
     [Header("판정")]
     [Tooltip("몸 중심에서 공격 판정 상자 중심까지의 거리. 팔이 닿는 거리라고 보면 된다.")]
